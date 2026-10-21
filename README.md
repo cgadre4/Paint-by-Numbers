@@ -1,0 +1,83 @@
+# Paint by #s
+
+A local web app that turns a still image into a limited-color preview, a numbered painting template, and a printable palette key. Image processing runs on your computer; the app does not upload your images to a cloud service.
+
+## Run on Windows
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then double-click `run.bat`. It installs the locked dependencies, starts the local server, and opens `http://127.0.0.1:8000`. Close the server with Ctrl+C so active jobs and temporary files are cleaned up.
+
+The launcher stores its environment in `%LOCALAPPDATA%\PaintByNumbers\venv`, keeping executable dependencies off synced/network project drives. Set `UV_PROJECT_ENVIRONMENT` before launching to choose another location.
+
+## Run from a terminal
+
+Python 3.12 is selected by `.python-version` and managed by uv:
+
+```sh
+uv sync --locked
+uv run --locked python server.py
+```
+
+On Windows, when working from a synced drive, set this first in PowerShell:
+
+```powershell
+$env:UV_PROJECT_ENVIRONMENT = Join-Path $env:LOCALAPPDATA 'PaintByNumbers\venv'
+```
+
+For development without opening a browser:
+
+```sh
+uv run --locked python -m uvicorn server:app --host 127.0.0.1 --port 8000
+```
+
+Use one server worker. Jobs are owned by that process; multi-worker deployment is not supported.
+
+## Workflow
+
+1. Browse or drop a PNG, JPEG, WebP, or BMP still image.
+2. Choose the number of paints, resolution, smoothing, region size, and label settings.
+3. Select **Process Image** (or Ctrl/Cmd+Enter). **Stop** cancels processing. Reset and new uploads invalidate earlier results.
+4. Click a palette number to highlight its regions; click again to clear it. Wheel/slider zoom and drag-to-pan affect all three canvases.
+5. Download template and palette as PNG or PDF. **Print Ready View** isolates the template; browser printing uses the clean template without highlighting or viewport transforms.
+
+Changing processing settings invalidates the current result. Processing is explicit; changing a slider does not automatically launch a job.
+
+## Output and limits
+
+- Maximum upload: **20 MiB**; source: **40 million pixels**; processed image: **4 million pixels**. Lower Resolution Factor for large source images.
+- Animated and unsupported images receive a clear validation error. EXIF orientation is normalized and transparency is composited onto white.
+- Two jobs can run concurrently. Processing times out after five minutes.
+- Finished jobs expire after 15 minutes; at most eight finished jobs are retained. Download results before they expire. Temporary data is removed on expiry and normal shutdown.
+- Template PDF fits a raster template on one A4 page (landscape for wide images), with 10 mm margins. It is not a vector PDF. Palette PDF includes all colors, numbers, hex values, and RGB values.
+- Numbers are placed only when their complete bounding box fits inside a region. If some regions cannot fit a number, the app reports how many. Physical canvas sizing, advanced simplification, and manual region editing are future work.
+- K-means is randomized. Exact palette order and pixel output can vary between runs.
+- OpenCL is attempted for bilateral filtering with CPU fallback. K-means and region work currently use the CPU.
+
+## Tests
+
+```sh
+uv sync --locked
+uv run --locked python -m playwright install chromium
+uv run --locked python -m pytest -q
+```
+
+On Linux, install Chromium system dependencies with `python -m playwright install --with-deps chromium` instead. On Windows, the browser tests use installed Chrome when available; `PBN_BROWSER_CHANNEL` can select another installed Playwright channel.
+
+`./test.ps1` runs the suite on Windows using the local cached environment. Backend-only checks:
+
+```sh
+uv run --locked python -m pytest tests/test_core.py -q
+```
+
+Tests cover processing and data contracts; image/parameter limits; decoding, orientation, and transparency; label containment; PNG/PDF output; crashes, cancellation, expiry, retention, and shutdown; and real browser workflows including delayed responses and network failure. Generated exports and screenshots are ignored under `.local/test-artifacts/`.
+
+## Code map
+
+- `server.py`: FastAPI routes, bounded multipart input, lifecycle, static serving.
+- `jobs.py`: spawned workers, progress snapshots, timeouts, retention, and cleanup.
+- `pipeline.py`: input normalization and OpenCV image processing.
+- `exports.py`: clean template/palette downloads and A4 PDF layout.
+- `static/`: vanilla HTML/CSS/JavaScript interface, with no npm build step.
+- `tests/`: pytest API/lifecycle tests and Playwright browser tests.
+- `AGENTS.md`: contributor/agent working rules.
+
+`mission_briefing.md` describes the original goals. Earlier sections of `status_log.md` and `updates.md` are historical and may describe behavior that has since changed. This README and the current source describe the shipped implementation.

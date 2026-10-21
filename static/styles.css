@@ -1,0 +1,779 @@
+/* ============================================
+   PAINT-BY-NUMBERS APP - STYLES.CSS
+   Glassmorphic Dark Mode Theme
+   ============================================ */
+
+:root {
+    /* Color Palette */
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #21262d;
+    --bg-glass: rgba(25, 30, 40, 0.8);
+
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+
+    --accent-primary: #58a6ff;
+    --accent-secondary: #238636;
+    --accent-warning: #d29922;
+    --accent-error: #da3633;
+
+    --border-color: #30363d;
+    --border-light: rgba(255, 255, 255, 0.1);
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px var(--bg-primary);
+    --shadow-md: 0 4px 6px var(--bg-primary);
+    --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.5);
+
+    /* Spacing */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+
+    /* Border Radius */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-full: 9999px;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    background: linear-gradient(135deg, var(--bg-primary) 0%, #1a222e 50%, var(--bg-secondary) 100%);
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+/* ============================================
+   APP LAYOUT
+   ============================================ */
+
+.app-container {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+}
+
+/* ============================================
+   CONTROL SIDEBAR (Glassmorphic)
+   ============================================ */
+
+.control-sidebar {
+    width: 340px;
+    min-width: 280px;
+    max-width: 40%;
+    background: var(--bg-glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    box-shadow: var(--shadow-md), inset 0 0 0 1px var(--border-light);
+}
+
+.control-sidebar h1 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--border-color);
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin: 0;
+}
+
+.control-sidebar h2 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--border-color);
+    margin-top: var(--spacing-lg);
+    margin-bottom: var(--spacing-sm);
+}
+
+.control-sidebar section {
+    padding: var(--spacing-md);
+}
+
+/* ============================================
+   UPLOAD SECTION
+   ============================================ */
+
+.upload-section .dropzone {
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-xl);
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: var(--bg-secondary);
+    outline: none;
+    position: relative;
+    min-height: 200px;
+    min-width: 300px;
+}
+
+.dropzone:hover, .dropzone.drag-over,
+.dropzone:focus-within {
+    border-color: var(--accent-primary);
+    background: rgba(88, 166, 255, 0.1);
+}
+
+.dropzone svg {
+    color: var(--text-muted);
+    margin-bottom: var(--spacing-sm);
+    pointer-events: none;
+}
+
+.dropzone p {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    margin: 0;
+    pointer-events: none;
+}
+
+.browse-link {
+    color: var(--accent-primary);
+    text-decoration: underline;
+    cursor: pointer;
+    pointer-events: none;
+}
+
+/* ============================================
+   PARAMETERS SECTION
+   ============================================ */
+
+.control-group {
+    margin-bottom: var(--spacing-md);
+}
+
+.control-group label {
+    display: block;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-xs);
+}
+
+.control-group input[type="range"] {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-full);
+    outline: none;
+    margin-top: var(--spacing-sm);
+}
+
+.control-group input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: var(--accent-primary);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    transition: transform 0.1s ease;
+}
+
+.control-group input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+}
+
+.badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: var(--bg-tertiary);
+    color: var(--accent-primary);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-full);
+    margin-left: var(--spacing-sm);
+}
+
+/* ============================================
+   BUTTONS
+   ============================================ */
+
+.btn-primary {
+    display: block;
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: linear-gradient(135deg, var(--accent-primary), #2196f3);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(88, 166, 255, 0.3);
+}
+
+.btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(88, 166, 255, 0.4);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
+}
+
+.btn-primary:disabled {
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+.btn-danger {
+    display: block;
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: linear-gradient(135deg, #f44336, #d32f2f);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(244, 67, 54, 0.3);
+}
+
+.btn-danger:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
+}
+
+.btn-danger:active {
+    transform: translateY(0);
+}
+
+.action-buttons {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+}
+
+.action-buttons #processBtn {
+    flex: 4;
+}
+
+.action-buttons #stopBtn {
+    flex: 1;
+}
+
+/* ============================================
+   PROGRESS & HARDWARE STATUS
+   ============================================ */
+
+.hw-accel-status {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: var(--spacing-md);
+    padding: var(--spacing-sm);
+    background: rgba(0,0,0,0.2);
+    border-radius: var(--radius-sm);
+    text-align: center;
+}
+
+.hw-accel-status.active {
+    color: #4caf50;
+    border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.btn-progress {
+    position: relative;
+    overflow: hidden;
+    padding: 0;
+}
+
+.btn-progress-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.2);
+    width: 0%;
+    transition: width 0.3s ease;
+    z-index: 1;
+}
+
+.btn-progress-text {
+    position: relative;
+    z-index: 2;
+    display: block;
+    padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.btn-secondary {
+    display: inline-block;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    cursor: pointer;
+    text-decoration: none;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+    background: var(--accent-primary);
+    color: white;
+    border-color: var(--accent-primary);
+}
+
+.btn-outline {
+    display: block;
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: transparent;
+    color: var(--accent-primary);
+    border: 1px solid var(--accent-primary);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: var(--spacing-sm);
+}
+
+.btn-outline:hover {
+    background: rgba(88, 166, 255, 0.1);
+}
+
+.btn-text {
+    display: block;
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: transparent;
+    color: var(--text-muted);
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: var(--spacing-sm);
+}
+
+.btn-text:hover {
+    color: var(--text-primary);
+}
+
+.btn-small {
+    padding: var(--spacing-xs) var(--spacing-md);
+    font-size: 0.75rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+/* ============================================
+   ACTIONS SECTION
+   ============================================ */
+
+.actions-section {
+    flex: 1;
+}
+
+.export-group h3 {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: var(--spacing-sm);
+}
+
+/* ============================================
+   PALETTE SECTION
+   ============================================ */
+
+.palette-section {
+    padding: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.palette-preview {
+    min-height: 60px;
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: var(--spacing-sm);
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    margin-top: var(--spacing-sm);
+}
+
+.palette-preview.empty {
+    justify-content: center;
+    align-items: center;
+}
+
+.palette-swatch {
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 12px;
+    font-weight: bold;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    border: 2px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.palette-swatch:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.palette-swatch.active {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
+}
+
+.palette-info {
+    position: absolute;
+    background: var(--bg-glass);
+    backdrop-filter: blur(8px);
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-md);
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    pointer-events: none;
+}
+
+/* ============================================
+   MAIN CONTENT AREA
+   ============================================ */
+
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.main-header {
+    padding: var(--spacing-md);
+    background: var(--bg-glass);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.main-header h2 {
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+#loadingIndicator {
+    color: var(--accent-primary);
+}
+
+/* ============================================
+   CANVAS CONTAINER
+   ============================================ */
+
+.canvas-container {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    overflow-y: auto;
+}
+
+@media (max-width: 1200px) {
+    .canvas-container {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .canvas-container {
+        grid-template-columns: 1fr;
+    }
+
+    .control-sidebar {
+        width: 100%;
+        min-width: auto;
+        max-width: none;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+    }
+}
+
+.canvas-viewer {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+}
+
+.canvas-viewer h3 {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.canvas-wrapper {
+    position: relative;
+    height: calc(100% - 40px);
+    min-height: 200px;
+}
+
+.canvas-wrapper canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    transform-origin: center center;
+}
+
+.placeholder {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+/* ============================================
+   VIEW CONTROLS FOOTER
+   ============================================ */
+
+.view-controls {
+    padding: var(--spacing-md);
+    background: var(--bg-glass);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* ============================================
+   STATUS MESSAGES
+   ============================================ */
+
+.status-message {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-md);
+    margin-top: var(--spacing-sm);
+    font-size: 0.875rem;
+}
+
+.status-message.success {
+    background: rgba(35, 134, 54, 0.2);
+    border: 1px solid rgba(35, 134, 54, 0.3);
+    color: var(--accent-secondary);
+}
+
+.status-message.error {
+    background: rgba(218, 54, 51, 0.2);
+    border: 1px solid rgba(218, 54, 51, 0.3);
+    color: var(--accent-error);
+}
+
+.status-message.info {
+    background: rgba(88, 166, 255, 0.2);
+    border: 1px solid rgba(88, 166, 255, 0.3);
+    color: var(--accent-primary);
+}
+
+.status-message.hidden {
+    display: none;
+}
+
+/* ============================================
+   LOADING INDICATOR
+   ============================================ */
+
+.loading {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    color: var(--accent-primary);
+}
+
+.loading.hidden {
+    display: none;
+}
+
+/* ============================================
+   PALETTE DETAILS MODAL
+   ============================================ */
+
+.palette-details {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--bg-glass);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    min-width: 300px;
+    box-shadow: var(--shadow-lg);
+    z-index: 1000;
+}
+
+.palette-details h3 {
+    font-size: 1rem;
+    margin-bottom: var(--spacing-sm);
+}
+
+.palette-details .color-info {
+    display: flex;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-sm);
+}
+
+.palette-details .swatch-preview {
+    width: 60px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    border: 2px solid var(--border-color);
+}
+
+.palette-details .color-values {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.close-modal {
+    position: absolute;
+    top: var(--spacing-sm);
+    right: var(--spacing-sm);
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.25rem;
+}
+
+/* ============================================
+   PRINT STYLES
+   ============================================ */
+
+@media print {
+    .control-sidebar, .view-controls, #statusMessage {
+        display: none !important;
+    }
+
+    body {
+        background: white;
+    }
+
+    .canvas-container {
+        display: block;
+        gap: 0;
+    }
+
+    .canvas-viewer {
+        border: none;
+        margin-bottom: var(--spacing-xl);
+        page-break-inside: avoid;
+    }
+
+    .canvas-viewer h3 {
+        display: none;
+    }
+
+    .canvas-wrapper {
+        height: auto;
+        max-height: 800px;
+    }
+
+    .canvas-wrapper canvas {
+        page-break-inside: avoid;
+    }
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+.hidden {
+    display: none !important;
+}
+
+.text-center {
+    text-align: center;
+}
+
+.mt-md {
+    margin-top: var(--spacing-md);
+}
+
+.mb-md {
+    margin-bottom: var(--spacing-md);
+}
+
+/* Reliability fixes: wrap every palette color and preserve the source aspect ratio. */
+.palette-preview { flex-wrap: wrap; overflow: visible; }
+.canvas-wrapper canvas { height: auto; max-height: 100%; touch-action: none; cursor: grab; will-change: transform; }
+.canvas-wrapper canvas:active { cursor: grabbing; }
+.placeholder { pointer-events: none; }
+.dropzone:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 3px; }
+#printTemplate { display: none; }
+body.print-ready .source-viewer, body.print-ready .quantized-viewer { display: none; }
+body.print-ready .canvas-container { grid-template-columns: 1fr; }
+body.print-ready .template-viewer, body.print-ready .template-viewer h3 { background: white; color: black; }
+body.print-ready .template-viewer canvas { transform: none !important; }
+@media (max-width: 768px) {
+    .app-container { flex-direction: column; overflow-y: auto; }
+    .control-sidebar { flex-shrink: 0; overflow: visible; }
+    .main-content { min-height: 600px; flex-shrink: 0; }
+    .upload-section .dropzone { min-width: 0; }
+}
+@page { size: A4; margin: 10mm; }
+@media print {
+    html, body { height: auto; overflow: visible; background: white; }
+    .app-container { display: none !important; }
+    #printTemplate[src] { display: block; width: auto; height: auto; max-width: 190mm; max-height: 277mm; margin: auto; }
+}
