@@ -5,7 +5,8 @@
 [DONE] Added validated bounded uploads, supported still-image decoding, orientation/transparency normalization, parameter bounds, explicit limits, two-worker capacity, timeout, crash detection, process joining, retained-result expiry, and cleanup on shutdown. Large result payloads stay in job-local files rather than multiprocessing shared state.
 [DONE] Repaired hole boundaries and label containment; regions too small for a readable number produce a visible warning. Advanced segmentation and physical print sizing remain future work.
 [DONE] Added a locked Python 3.12 environment, a Windows launcher using a local cache, pytest/Playwright coverage, cross-platform CI configuration, README, and updated AGENTS.md working rules.
-Verification: all 38 tests passed locally (30 core/API/lifecycle and 8 real Chrome browser tests); generated A4 palette/template PDFs and desktop/mobile screenshots were visually inspected. The final exact test count and remote CI result are recorded in the release work/chat. Historical entries below are retained for context and are not the current specification.
+[DONE] Fixed the equal-clock-tick retention edge case found by Windows CI; regression coverage checks both completion orders.
+Verification: all 40 tests passed locally (32 core/API/lifecycle and 8 real Chrome browser tests); generated A4 palette/template PDFs and desktop/mobile screenshots were visually inspected. The final exact test count and remote CI result are recorded in the release work/chat. Historical entries below are retained for context and are not the current specification.
 
 
 ## Phase 1: Image Processing Backend (`server.py`)

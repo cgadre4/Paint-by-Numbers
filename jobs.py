@@ -30,6 +30,7 @@ class Job:
     process: object
     started: float
     finished: float | None = None
+    finished_order: int = 0
 
 
 class JobManager:
@@ -44,6 +45,7 @@ class JobManager:
         self.max_active, self.max_retained = max_active, max_retained
         self.ttl, self.timeout, self.worker = ttl, timeout, worker
         self.closed = False
+        self.finished_sequence = 0
 
     def start(self, image, params):
         with self.lock:
@@ -98,6 +100,8 @@ class JobManager:
         (job.directory / "input.png").unlink(missing_ok=True)
         if status:
             self.states[job_id] = {"status": status, "progress": 0, "error": error}
+        self.finished_sequence += 1
+        job.finished_order = self.finished_sequence
         job.finished = time.monotonic()
         if self.states.get(job_id, {}).get("status") != "Complete":
             for name in ("result.json", "result.tmp"):
@@ -118,9 +122,10 @@ class JobManager:
                             self._finish(job_id, job)
                     elif now - job.started >= self.timeout:
                         self._finish(job_id, job, "Error", "Processing exceeded the five-minute time limit. Try a lower resolution.")
-            completed = sorted(((job.finished, job_id) for job_id, job in self.jobs.items()
-                                if job.finished is not None))
-            for position, (finished, job_id) in enumerate(completed):
+            # Clock ticks can tie on Windows; retain the actual completion order.
+            completed = sorted((job.finished, job.finished_order, job_id)
+                               for job_id, job in self.jobs.items() if job.finished is not None)
+            for position, (finished, _, job_id) in enumerate(completed):
                 if now - finished >= self.ttl or position < len(completed) - self.max_retained:
                     self._remove_directory(self.jobs[job_id].directory)
                     del self.jobs[job_id]

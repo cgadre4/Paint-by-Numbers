@@ -3,6 +3,7 @@ import io
 import json
 import time
 import uuid
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -264,3 +265,24 @@ def test_pdf_orientation_and_margins(width, height):
         path = __import__('pathlib').Path('.local/test-artifacts/template-portrait.pdf')
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(pdf)
+
+
+@pytest.mark.parametrize('reverse_completion', [False, True])
+def test_retention_uses_completion_order_when_clock_ticks_tie(tmp_path, params, monkeypatch, reverse_completion):
+    manager = JobManager(root=tmp_path, worker=waiting_worker, max_retained=1)
+    try:
+        identifiers = iter([uuid.UUID(int=2), uuid.UUID(int=1)])
+        monkeypatch.setattr('jobs.uuid.uuid4', lambda: next(identifiers))
+        monkeypatch.setattr('jobs.time', SimpleNamespace(monotonic=lambda: 100.0))
+        first = manager.start(sample_image(), params)
+        second = manager.start(sample_image(), params)
+        older, newer = (second, first) if reverse_completion else (first, second)
+        manager.stop(older)
+        manager.stop(newer)
+        assert manager.jobs[older].finished == manager.jobs[newer].finished
+        manager.reap()
+        assert list(manager.jobs) == [newer]
+        assert set(manager.states) == {newer}
+        assert not (manager.root / older).exists()
+    finally:
+        manager.close()

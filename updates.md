@@ -105,3 +105,4 @@ Any subsequent bug fixes, enhancements, or feature additions will be logged here
 - Preserved OpenCV K-means and existing region cleanup. Fixed hole outlines and label-box containment; report regions too small to number.
 - Added dependency locking, reproducible Windows launch/test helpers, API/lifecycle/browser regression tests, CI, README, and contributor guidance.
 - Standardized the public-facing name to Paint by #s; GitHub-compatible repository name: Paint-by-Numbers.
+- Fixed Windows retention ordering when completion timestamps tie; explicit completion sequence preserves the newest finished result.
