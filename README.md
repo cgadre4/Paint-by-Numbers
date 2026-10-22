@@ -48,6 +48,7 @@ Changing processing settings invalidates the current result. Processing is expli
 - Two jobs can run concurrently. Processing times out after five minutes.
 - Finished jobs expire after 15 minutes; at most eight finished jobs are retained. Download results before they expire. Temporary data is removed on expiry and normal shutdown.
 - Template PDF fits a raster template on one A4 page (landscape for wide images), with 10 mm margins. It is not a vector PDF. Palette PDF includes all colors, numbers, hex values, and RGB values.
+- Small regions merge only into edge-adjacent regions, using color similarity and shared boundary length. Small unnumberable regions receive additional conservative cleanup; stronger contrasts and large thin features are preserved.
 - Numbers are placed only when their complete bounding box fits inside a region. If some regions cannot fit a number, the app reports how many. Physical canvas sizing, advanced simplification, and manual region editing are future work.
 - K-means is randomized. Exact palette order and pixel output can vary between runs.
 - OpenCL is attempted for bilateral filtering with CPU fallback. K-means and region work currently use the CPU.
@@ -70,11 +71,22 @@ uv run --locked python -m pytest tests/test_core.py -q
 
 Tests cover processing and data contracts; image/parameter limits; decoding, orientation, and transparency; label containment; PNG/PDF output; crashes, cancellation, expiry, retention, and shutdown; and real browser workflows including delayed responses and network failure. Generated exports and screenshots are ignored under `.local/test-artifacts/`.
 
+## Image benchmark
+
+```sh
+uv run --locked python -m benchmarks.run
+uv run --locked python -m benchmarks.run --colors 32 --output .local/benchmarks-32
+```
+
+The benchmark compares the former cleanup with the current algorithm on six seeded synthetic images, with identical K-means input for both methods. It records region/label counts, color distortion, stage timings, and comparison PNGs under ignored `.local/benchmarks/`. Add your own photographs with `--images path/to/photo.jpg`; they remain local. See [benchmark methodology and options](benchmarks/README.md). Synthetic results are not a claim about all photographs.
+
 ## Code map
 
 - `server.py`: FastAPI routes, bounded multipart input, lifecycle, static serving.
 - `jobs.py`: spawned workers, progress snapshots, timeouts, retention, and cleanup.
-- `pipeline.py`: input normalization and OpenCV image processing.
+- `pipeline.py`: input normalization, OpenCV quantization, and numbered template rendering.
+- `regions.py`: edge-adjacent, color-aware region merging and shared label-fit geometry.
+- `benchmarks/`: seeded synthetic fixtures, paired old/new cleanup measurements, and visual comparisons.
 - `exports.py`: clean template/palette downloads and A4 PDF layout.
 - `static/`: vanilla HTML/CSS/JavaScript interface, with no npm build step.
 - `tests/`: pytest API/lifecycle tests and Playwright browser tests.

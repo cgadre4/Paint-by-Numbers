@@ -106,3 +106,12 @@ Any subsequent bug fixes, enhancements, or feature additions will be logged here
 - Added dependency locking, reproducible Windows launch/test helpers, API/lifecycle/browser regression tests, CI, README, and contributor guidance.
 - Standardized the public-facing name to Paint by #s; GitHub-compatible repository name: Paint-by-Numbers.
 - Fixed Windows retention ordering when completion timestamps tie; explicit completion sequence preserves the newest finished result.
+
+
+## 2026-10-22 - Image benchmark and region cleanup
+
+- Added a deterministic local image benchmark with six synthetic fixtures, optional local photos, paired legacy/current comparisons, per-stage timings, region/label/error metrics, and comparison images.
+- Replaced wide-neighborhood color voting with edge-adjacent graph merging guided by color similarity and shared boundary length. Cleanup and numbering now treat diagonal-only contacts as separate regions.
+- Added bounded, contrast-aware merging for small regions unable to fit a number; preserved larger/contrasting details and the existing visible warning when numbering remains impossible.
+- Shared label dimensions between cleanup and rendering, retaining palette IDs and complete label-box containment.
+- Added 12 regressions; all 52 local tests passed. Synthetic unnumbered-region totals decreased from 250 to 121 at default settings and from 910 to 119 at 32 colors. See benchmarks/RESULTS.md for tradeoffs and scope.

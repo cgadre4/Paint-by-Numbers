@@ -18,7 +18,10 @@ Paint by #s converts a still image into a quantized preview, a numbered outline 
 | --- | --- |
 | `server.py` | Root FastAPI lifespan, mounted API, upload-body cap, parameter validation, downloads, static serving, launch entry point. |
 | `jobs.py` | One server process owns a `JobManager`, spawned workers, a small shared progress dictionary, private temporary directories, timeout/retention, and cleanup. |
-| `pipeline.py` | Image validation/normalization, scaling, optional OpenCL bilateral filtering, OpenCV K-means, region cleanup, outlines, interior label placement. |
+| `pipeline.py` | Image validation/normalization, scaling, optional OpenCL bilateral filtering, OpenCV K-means, outlines, interior label placement. |
+| `regions.py` | Four-connected region graph, color/boundary-aware merging, and shared label-fit geometry. |
+| `benchmarks/` | Seeded synthetic/custom-image comparisons; legacy cleanup reference is benchmark-only. |
+| `tests/test_regions.py` | Region adjacency, detail preservation, label geometry, and benchmark regressions. |
 | `exports.py` | Template/palette PNG and A4 PDF generation independent of frontend view state. |
 | `static/index.html` | Controls, stable DOM IDs, upload zone, three canvases, clean print image. |
 | `static/app.js` | UI state, revision ownership, sequential job polling, stale-response guards, rendering, downloads, highlighting, pan/zoom/reset. |
@@ -70,6 +73,8 @@ Keep `uv.lock` synchronized with intentional dependency changes. Do not reintrod
 - Result images are PNG data URLs. `label_map` is an exact grayscale class-index image; never infer region identity by comparing approximate RGB colors.
 - `GET /api/process/export/{job_id}/{template|palette}.{png|pdf}` generates downloads. Unknown/expired jobs return 404; unfinished/failed jobs return 409. Export sources must be unaffected by zoom, pan, selection, or highlighted canvases.
 - OpenCV pixels/centers are BGR; palette values are RGB. Preserve explicit conversion at boundaries. K-means is randomized: use property-based expectations or fixed synthetic shapes instead of exact clustering snapshots.
+- Cleanup and numbering use four-connected regions; diagonal contact alone must not combine paintable regions. Merge only across a shared edge, preserve palette IDs, and coalesce newly connected regions of the same color.
+- Keep the extra label-fit merging conservative: honor the area bound and color-distance guard in `regions.py`. Share number-box geometry with the renderer. Larger or contrasting unnumberable details may remain and must still generate warnings.
 - Label placement must keep the entire text bounding box within the corresponding region. Preserve hole boundaries. Report regions that cannot fit a number; never silently claim every region is numbered.
 
 ## Input and job lifecycle rules
@@ -98,4 +103,4 @@ Run relevant focused tests while working, then the full suite before publishing 
 
 Test artifacts live under ignored `.local/test-artifacts/`; never publish them or `.venv/`. Use synthetic images in tests. Run `git diff --check`, inspect staged content, and keep README commands accurate. Report exact tests run and any remaining limitations. CI is configured separately from local verification; do not claim remote CI passed until its result is known.
 
-Current scope is reliability. Perceptual color clustering, superpixel/graph segmentation, new GPU backends, vector template output, physical canvas sizing, and manual region editing require separate implementation and evaluation. Do not describe them as shipped. PDF templates currently embed a raster image fitted to A4 with 10 mm margins.
+Reliability work and the first region-cleanup/image-benchmark iteration are implemented. Run `uv run --locked python -m benchmarks.run` after changing cleanup; compare label counts, distortion, timing, and images, and distinguish synthetic results from photographic evaluation. Use identical quantization inputs for paired comparisons. Benchmark-only legacy code must not become the application path. Perceptual color clustering, superpixel/graph segmentation, new GPU backends, vector template output, physical canvas sizing, and manual region editing require separate implementation and evaluation. Do not describe them as shipped. PDF templates currently embed a raster image fitted to A4 with 10 mm margins.

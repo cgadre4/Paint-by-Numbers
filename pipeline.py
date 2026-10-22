@@ -9,6 +9,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from regions import cleanup_regions, label_dimensions
+
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_INPUT_PIXELS = 40_000_000
 MAX_PROCESS_PIXELS = 4_000_000
@@ -72,21 +74,14 @@ def bilateral_filter(image, d, sigma_color, sigma_space):
     return cv2.bilateralFilter(image, d, sigma_color, sigma_space)
 
 
-def cleanup_regions(labels, k, area_min):
-    cleaned = labels.copy()
-    for color_idx in range(k):
-        mask = (cleaned == color_idx).astype(np.uint8)
-        count, components, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-        for component in range(1, count):
-            if stats[component, cv2.CC_STAT_AREA] >= area_min:
-                continue
-            small = components == component
-            dilated = cv2.dilate(small.astype(np.uint8), np.ones((5, 5), np.uint8), iterations=2)
-            neighbors = cleaned[(dilated > 0) & ~small]
-            neighbors = neighbors[neighbors != color_idx]
-            if neighbors.size:
-                cleaned[small] = np.bincount(neighbors).argmax()
-    return cleaned
+def quantize_image(image, k, seed=None):
+    """Keep the existing K-means settings; optional seed is for paired benchmarks."""
+    if seed is not None:
+        cv2.setRNGSeed(seed)
+    pixels = image.reshape(-1, 3).astype(np.float32)
+    _, flat_labels, centers = cv2.kmeans(pixels, k, None,
+        (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0), 10, cv2.KMEANS_RANDOM_CENTERS)
+    return flat_labels.reshape(image.shape[:2]), centers
 
 
 def extract_contours_and_label(labels, k, stroke_width, font_scale):
@@ -99,7 +94,7 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale):
         mask = (labels == color_idx).astype(np.uint8)
         contours, _ = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
         cv2.drawContours(template, contours, -1, (0, 0, 0), stroke_width)
-        count, components, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        count, components, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=4)
         for component in range(1, count):
             x, y, w, h, _ = stats[component]
             region = (components[y:y+h, x:x+w] == component).astype(np.uint8)
@@ -107,9 +102,7 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale):
             text = str(color_idx + 1)
             found = False
             for scale in np.linspace(font_scale, min(font_scale, 0.3), 8):
-                (tw, th), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, 1)
-                padding = stroke_width + 1
-                bw, bh = tw + 2 * padding, th + baseline + 2 * padding
+                bw, bh, th, padding = label_dimensions(color_idx, stroke_width, scale)
                 if bw > w or bh > h:
                     continue
                 fits = cv2.erode(region, np.ones((bh, bw), np.uint8),
@@ -148,12 +141,10 @@ def process_job_worker(job_id, shared_state, directory, params):
         progress("Applying bilateral filter", 20)
         smoothed = bilateral_filter(image, params["bilateral_diameter"], params["sigma_color"], params["sigma_color"])
         progress("Running K-means clustering", 40)
-        pixels = smoothed.reshape(-1, 3).astype(np.float32)
-        # Preserve the current OpenCV algorithm (no SciPy/scikit-learn DLL dependency).
-        _, flat_labels, centers = cv2.kmeans(pixels, params["k"], None,
-            (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0), 10, cv2.KMEANS_RANDOM_CENTERS)
+        raw_labels, centers = quantize_image(smoothed, params["k"])
         progress("Cleaning up small regions", 60)
-        labels = cleanup_regions(flat_labels.reshape(image.shape[:2]), params["k"], params["area_min"])
+        labels = cleanup_regions(raw_labels, params["k"], params["area_min"],
+                                 centers, params["stroke_width"], params["font_scale"])
         progress("Building preview image", 80)
         preview = centers[labels].astype(np.uint8)
         palette = [{"id": i + 1, "hex": "#{:02x}{:02x}{:02x}".format(*map(int, color)),

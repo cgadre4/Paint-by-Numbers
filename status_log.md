@@ -1,6 +1,13 @@
 # Status Log - Paint-by-Numbers App
 
-## 2026-10-21: Reliable core (current implementation)
+## 2026-10-22: Image benchmark and adjacent-region cleanup (current implementation)
+[DONE] Replaced wide-dilation majority-color cleanup with a four-connected region graph. Merges use shared edges, RGB similarity, boundary length, and updated region areas; same-color bridges coalesce immediately.
+[DONE] Added conservative extra merging for small regions that cannot fit a number. Shared renderer/cleanup geometry handles stroke padding and two-digit IDs. Larger or contrasting thin details remain protected and may still be reported as unnumbered.
+[DONE] Added seeded synthetic and optional local-image benchmarks with fixed quantization inputs, legacy cleanup reference, per-stage timing samples, quality metrics, JSON/Markdown reports, and comparison PNGs.
+[DONE] Added 12 cleanup/benchmark regression checks and updated README/AGENTS guidance. All 52 local tests passed, including real Chrome workflows and PNG/PDF exports (one existing Starlette/httpx deprecation warning).
+Verification: six synthetic fixtures, three repetitions each. Unnumbered regions: 250 to 121 with app defaults, and 910 to 119 at 32 colors. Visual comparisons, a resized custom-image CLI smoke check, a four-million-pixel uniform input, and a 65,536-component stress map were checked. See `benchmarks/RESULTS.md` for measurements and limitations. These are local results, not photographic quality or new remote-CI claims.
+
+## 2026-10-21: Reliable core
 [DONE] Fixed palette identifiers, hidden results, all four download actions, reset state, stale upload/job responses, bounded polling retries, real palette highlighting, synchronized panning, zoom increments, and clean template printing.
 [DONE] Added validated bounded uploads, supported still-image decoding, orientation/transparency normalization, parameter bounds, explicit limits, two-worker capacity, timeout, crash detection, process joining, retained-result expiry, and cleanup on shutdown. Large result payloads stay in job-local files rather than multiprocessing shared state.
 [DONE] Repaired hole boundaries and label containment; regions too small for a readable number produce a visible warning. Advanced segmentation and physical print sizing remain future work.
