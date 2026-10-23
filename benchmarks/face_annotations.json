@@ -1,0 +1,8 @@
+{
+  "description": "Manually checked eye evaluation rectangles on normalized 512px benchmark images; evaluation only, never detector input.",
+  "images": {
+    "astronaut": {"size": [512,512], "eyes": [[190,94,25,15],[235,96,26,15]], "face": [177,67,93,115]},
+    "obama": {"size": [410,512], "eyes": [[169,79,24,15],[213,79,25,15]], "face": [137,34,131,137]},
+    "chelsea": {"size": [451,300], "eyes": [[130,110,67,69],[265,136,38,53]], "face": [110,80,230,195]}
+  }
+}

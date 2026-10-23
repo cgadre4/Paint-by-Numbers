@@ -10,6 +10,7 @@ import numpy as np
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from regions import cleanup_regions, label_dimensions, label_glyph
+from facial import detect_eyes, eye_mask, preserve_eye_pixels
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_INPUT_PIXELS = 40_000_000
@@ -74,37 +75,63 @@ def bilateral_filter(image, d, sigma_color, sigma_space):
     return cv2.bilateralFilter(image, d, sigma_color, sigma_space)
 
 
-def quantize_image(image, k, seed=None):
-    """Keep the existing K-means settings; optional seed is for paired benchmarks."""
+def quantize_image(image, k, seed=None, color_space="rgb"):
+    """K-means in RGB or float CIELab; always return BGR palette centers."""
+    if color_space not in {"rgb", "lab"}:
+        raise ValueError("Color space must be rgb or lab.")
     if seed is not None:
         cv2.setRNGSeed(seed)
-    pixels = image.reshape(-1, 3).astype(np.float32)
-    _, flat_labels, centers = cv2.kmeans(pixels, k, None,
-        (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0), 10, cv2.KMEANS_RANDOM_CENTERS)
+    pixels = image.astype(np.float32)
+    if color_space == "lab":
+        pixels = cv2.cvtColor(pixels / 255.0, cv2.COLOR_BGR2Lab)
+    # Scale the convergence tolerance with the Lab L range (0-100 vs 0-255).
+    epsilon = 1.0 if color_space == "rgb" else 100.0 / 255.0
+    _, flat_labels, centers = cv2.kmeans(pixels.reshape(-1, 3), k, None,
+        (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, epsilon),
+        10, cv2.KMEANS_RANDOM_CENTERS)
+    if color_space == "lab":
+        centers = cv2.cvtColor(centers[None, :, :], cv2.COLOR_Lab2BGR)[0] * 255.0
+        centers = np.clip(centers, 0, 255)
     return flat_labels.reshape(image.shape[:2]), centers
 
 
-def extract_contours_and_label(labels, k, stroke_width, font_scale):
+def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=None):
     """Keep every boundary and only draw numbers whose complete box fits inside."""
     height, width = labels.shape
     template = np.full((height, width, 3), 255, np.uint8)
+    if detail_mask is not None and detail_mask.shape != labels.shape:
+        raise ValueError("Detail mask must match the label map.")
+    if detail_mask is not None:
+        detail_mask = np.asarray(detail_mask, dtype=bool)
     placements = []
     unlabelled = 0
     for color_idx in range(k):
         mask = (labels == color_idx).astype(np.uint8)
         contours, _ = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(template, contours, -1, (0, 0, 0), stroke_width)
+        if detail_mask is None or not detail_mask.any() or stroke_width == 1:
+            cv2.drawContours(template, contours, -1, (0, 0, 0), stroke_width)
+        else:
+            # A thick outline can black out the very details protected in the map.
+            boundary = np.full((height, width), 255, np.uint8)
+            cv2.drawContours(boundary, contours, -1, 0, stroke_width)
+            thin = np.full_like(boundary, 255)
+            cv2.drawContours(thin, contours, -1, 0, 1)
+            boundary[detail_mask] = thin[detail_mask]
+            np.minimum(template, boundary[:, :, None], out=template)
         count, components, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=4)
         for component in range(1, count):
             x, y, w, h, _ = stats[component]
             region = (components[y:y+h, x:x+w] == component).astype(np.uint8)
             distance = cv2.distanceTransform(np.pad(region, 1), cv2.DIST_L2, 5)[1:-1, 1:-1]
+            number_region = region.copy()
+            if detail_mask is not None:
+                number_region[detail_mask[y:y+h, x:x+w]] = 0
             found = False
             for scale in np.linspace(font_scale, min(font_scale, 0.3), 8):
                 bw, bh, _, padding = label_dimensions(color_idx, stroke_width, scale)
                 if bw > w or bh > h:
                     continue
-                fits = cv2.erode(region, np.ones((bh, bw), np.uint8),
+                fits = cv2.erode(number_region, np.ones((bh, bw), np.uint8),
                                  borderType=cv2.BORDER_CONSTANT, borderValue=0)
                 if not fits.any():
                     continue
@@ -140,25 +167,42 @@ def process_job_worker(job_id, shared_state, directory, params):
             progress("Scaling image", 10)
             image = cv2.resize(image, (round(image.shape[1] * factor), round(image.shape[0] * factor)),
                                interpolation=cv2.INTER_AREA)
+        enabled = params.get("protect_eyes", True)
+        boxes, face_count = [], 0
+        if enabled:
+            progress("Locating eyes", 15)
+            boxes, face_count = detect_eyes(image)
+        protection = eye_mask(image.shape, boxes)
         progress("Applying bilateral filter", 20)
         smoothed = bilateral_filter(image, params["bilateral_diameter"], params["sigma_color"], params["sigma_color"])
-        progress("Running K-means clustering", 40)
-        raw_labels, centers = quantize_image(smoothed, params["k"])
+        smoothed = preserve_eye_pixels(image, smoothed, protection)
+        space = params.get("color_space", "lab")
+        progress("Clustering perceptual colors" if space == "lab" else "Clustering RGB colors", 40)
+        raw_labels, centers = quantize_image(smoothed, params["k"], color_space=space)
         progress("Cleaning up small regions", 60)
         labels = cleanup_regions(raw_labels, params["k"], params["area_min"],
-                                 centers, params["stroke_width"], params["font_scale"])
+                                 centers, params["stroke_width"], params["font_scale"], protection)
         progress("Building preview image", 80)
         preview = centers[labels].astype(np.uint8)
         palette = [{"id": i + 1, "hex": "#{:02x}{:02x}{:02x}".format(*map(int, color)),
                     "rgb": list(map(int, color))} for i, color in enumerate(centers[:, ::-1])]
         progress("Generating printable template", 90)
         template, placements, missing = extract_contours_and_label(
-            labels, params["k"], params["stroke_width"], params["font_scale"])
+            labels, params["k"], params["stroke_width"], params["font_scale"], protection)
+        notices = []
+        if missing:
+            reason = " outside protected eye detail" if boxes else ""
+            notices.append(f"{missing} region(s) could not fit a readable number{reason}. Try a smaller font or fewer colors; review fine details before painting.")
+        if enabled and not boxes:
+            notices.append("No human eyes were detected; eye protection was not applied. Review small, angled, or obscured faces.")
+        elif boxes:
+            notices.append(f"Protected {len(boxes)} detected eye area(s), using thin outlines and keeping numbers outside them. Fine eye regions may remain unnumbered.")
         result = {"processed_image": img_to_base64(preview), "template_image": img_to_base64(template),
                   "label_map": img_to_base64(labels.astype(np.uint8)), "palette": palette,
                   "image_dimensions": {"width": image.shape[1], "height": image.shape[0]},
                   "parameters": params, "label_placements": placements,
-                  "warnings": ([f"{missing} region(s) are too small to fit a readable number. Try fewer colors, a smaller font, or a larger minimum region area."] if missing else [])}
+                  "eye_protection": {"enabled": enabled, "detected_faces": face_count, "boxes": boxes},
+                  "warnings": notices}
         pending = root / "result.tmp"
         pending.write_text(json.dumps(result), encoding="utf-8")
         pending.replace(root / "result.json")

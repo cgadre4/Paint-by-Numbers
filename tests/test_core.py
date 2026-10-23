@@ -42,6 +42,8 @@ def test_processing_contract_and_all_exports(client, params, k, factor):
                      lambda value: value['status'] in {'Complete', 'Error'})
     assert state['status'] == 'Complete', state
     result = state['result']
+    assert result['parameters']['color_space'] == 'lab'
+    assert result['eye_protection']['enabled'] is True
     assert result['image_dimensions'] == {'width': round(256 * factor), 'height': round(160 * factor)}
     assert [color['id'] for color in result['palette']] == list(range(1, k + 1))
     for color in result['palette']:
@@ -78,7 +80,8 @@ def test_processing_contract_and_all_exports(client, params, k, factor):
 
 @pytest.mark.parametrize('field,value', [('k', 2), ('k', 33), ('k', 'abc'), ('k', 3.5),
     ('resolution_factor', 0), ('resolution_factor', 'nan'), ('font_scale', 'inf'),
-    ('bilateral_diameter', 16), ('sigma_color', 0), ('area_min', 0), ('stroke_width', 5)])
+    ('bilateral_diameter', 16), ('sigma_color', 0), ('area_min', 0), ('stroke_width', 5),
+    ('color_space', 'unknown'), ('protect_eyes', 'perhaps')])
 def test_invalid_parameters_do_not_create_jobs(client, params, field, value):
     params[field] = value
     before = set(app.state.jobs.jobs)
@@ -286,3 +289,16 @@ def test_retention_uses_completion_order_when_clock_ticks_tie(tmp_path, params, 
         assert not (manager.root / older).exists()
     finally:
         manager.close()
+
+
+def test_omitted_color_options_use_perceptual_and_eye_defaults(client, params):
+    params.pop('color_space')
+    params.pop('protect_eyes')
+    response = submit(client, params)
+    assert response.status_code == 202
+    job_id = response.json()['job_id']
+    state = wait_for(lambda: client.get(f'/api/process/status/{job_id}').json(),
+                     lambda value: value['status'] in {'Complete','Error'})
+    assert state['status'] == 'Complete', state
+    assert state['result']['parameters']['color_space'] == 'lab'
+    assert state['result']['parameters']['protect_eyes'] is True

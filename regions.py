@@ -59,16 +59,23 @@ def component_map(labels, k):
     return regions, np.concatenate(statistics), np.asarray(colors, dtype=np.int32)
 
 
-def cleanup_regions(labels, k, area_min, centers=None, stroke_width=1, font_scale=0.5):
+def cleanup_regions(labels, k, area_min, centers=None, stroke_width=1, font_scale=0.5,
+                    protected_mask=None):
     """Merge smallest regions first, only across a shared pixel edge.
 
-    Regions below area_min always qualify. Additional unnumberable regions qualify
+    Regions intersecting protected_mask retain their palette IDs, including tiny
+    eye highlights. Other regions below area_min qualify. Unnumberable regions qualify
     only within a bounded area and when a similar-colored neighbor is available.
     Each merge removes a graph node, so cleanup cannot oscillate between colors.
     The input and palette IDs are preserved; unused palette entries are allowed.
     """
     regions, stats, colors = component_map(labels, k)
     count = len(stats)
+    protected = np.zeros(count, dtype=bool)
+    if protected_mask is not None:
+        if protected_mask.shape != labels.shape:
+            raise ValueError("Protection mask must match the label map.")
+        protected[np.unique(regions[protected_mask.astype(bool)])] = True
     adjacency = [{} for _ in range(count)]
     # Group horizontal/vertical contacts once, rather than dilating a full image
     # for every speck. Encoded pairs keep temporary storage linear in pixel count.
@@ -94,7 +101,7 @@ def cleanup_regions(labels, k, area_min, centers=None, stroke_width=1, font_scal
                         min(font_scale, 0.3))[:2]) * 4) for c in range(k)])
 
     def enqueue(node):
-        if adjacency[node] and areas[node] <= limits[colors[node]]:
+        if not protected[node] and adjacency[node] and areas[node] <= limits[colors[node]]:
             heapq.heappush(queue, (int(areas[node]), node, int(versions[node])))
 
     def absorb(source, target):
@@ -104,6 +111,7 @@ def cleanup_regions(labels, k, area_min, centers=None, stroke_width=1, font_scal
         tx, ty, tw, th = boxes[target]
         left, top = min(x, tx), min(y, ty)
         boxes[target] = (left, top, max(x+w, tx+tw)-left, max(y+h, ty+th)-top)
+        protected[target] |= protected[source]
         areas[target] += areas[source]
         areas[source] = 0
         adjacency[target].pop(source, None)
@@ -121,7 +129,7 @@ def cleanup_regions(labels, k, area_min, centers=None, stroke_width=1, font_scal
         enqueue(node)
     while queue:
         _, node, version = heapq.heappop(queue)
-        if adjacency[node] is None or version != versions[node] or not adjacency[node]:
+        if protected[node] or adjacency[node] is None or version != versions[node] or not adjacency[node]:
             continue
         small = areas[node] < area_min
         if not small:

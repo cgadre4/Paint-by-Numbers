@@ -125,3 +125,10 @@ Any subsequent bug fixes, enhancements, or feature additions will be logged here
 - All 67 local tests passed, including browser workflows; synthetic benchmarks and photographic/PNG/PDF visual checks completed. Updated contributor and benchmark documentation. No new CI result or publication claimed.
 
 - Standing release preference: after completed work passes the full suite and relevant checks, commit/push by default and verify all required GitHub CI jobs for that exact commit; preserve unrelated changes and inspect public contents first.
+
+
+## 2026-10-22 - Perceptual colors and eye preservation
+- Added Lab/RGB color matching and local human-eye protection controls; default to Lab with protection on. API options are validated and omitted options preserve defaults.
+- Retain detected eye components during cleanup, use mild eye filtering and thin outlines, and keep labels outside eye boxes. Report detection metadata and unnumbered fine detail explicitly.
+- Added a frozen 6b657ba reference, evaluation-only facial annotations, four-way photo comparisons, and FACIAL_RESULTS.md. Across 36 cases, human-eye color error improved 40.5% and edge F1 rose 16.8 points, with 24.0% more unnumbered regions; six additional size/seed cases supported the direction.
+- All 87 local tests passed (including 9 browser workflows), plus historical benchmarks and real portrait/export visual checks. No cloud upload or new dependency. Remote CI is verified separately for the pushed commit.

@@ -2,7 +2,8 @@
 (() => {
     'use strict';
     const defaults = Object.freeze({resolution_factor: 1, k: 8, bilateral_diameter: 7,
-        sigma_color: 75, area_min: 50, stroke_width: 2, font_scale: 1});
+        sigma_color: 75, area_min: 50, stroke_width: 2, font_scale: 1,
+        color_space: 'lab', protect_eyes: true});
     const controls = {
         resolution_factor: ['resolutionFactor', 'resolutionBadge'], k: ['kSlider', 'kBadge'],
         bilateral_diameter: ['bilateralDiameter', 'bilateralBadge'], sigma_color: ['sigmaColor', 'sigmaBadge'],
@@ -25,6 +26,9 @@
                 ? state.parameters[name].toFixed(1) : state.parameters[name];
             el[slider].disabled = Boolean(state.active);
         }
+        el.colorSpace.value = state.parameters.color_space;
+        el.protectEyes.checked = state.parameters.protect_eyes;
+        el.colorSpace.disabled = el.protectEyes.disabled = Boolean(state.active);
         el.processBtn.disabled = Boolean(state.active) || !state.source;
         el.stopBtn.classList.toggle('hidden', !state.active);
         el.loadingIndicator.classList.toggle('hidden', !state.active);
@@ -316,6 +320,14 @@
         el[slider].addEventListener('input', () => {
             if (state.active) return;
             state.parameters[name] = Number(el[slider].value);
+            if (state.result) { invalidate(); message('Settings changed. Process the image to update the result.'); }
+            updateControls();
+        });
+    }
+    for (const [name, id] of [['color_space', 'colorSpace'], ['protect_eyes', 'protectEyes']]) {
+        el[id].addEventListener('change', () => {
+            if (state.active) return;
+            state.parameters[name] = name === 'protect_eyes' ? el[id].checked : el[id].value;
             if (state.result) { invalidate(); message('Settings changed. Process the image to update the result.'); }
             updateControls();
         });

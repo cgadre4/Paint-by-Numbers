@@ -28,6 +28,19 @@
                 <h2>Parameters</h2>
 
                 <div class="control-group">
+                    <label for="colorSpace">Color matching</label>
+                    <select id="colorSpace" aria-describedby="colorHelp">
+                        <option value="lab" selected>Perceptual (Lab)</option>
+                        <option value="rgb">Classic (RGB)</option>
+                    </select>
+                    <p id="colorHelp" class="control-help">Perceptual matching favors natural color differences. Try 16-32 colors for portraits.</p>
+                </div>
+                <div class="control-group">
+                    <label class="checkbox-label" for="protectEyes"><input type="checkbox" id="protectEyes" checked aria-describedby="eyeHelp"> Protect detected human eyes</label>
+                    <p id="eyeHelp" class="control-help">Local detection works best on frontal faces. Keeps fine eye regions and thin outlines; some may be too small to number. Review small or angled faces.</p>
+                </div>
+
+                <div class="control-group">
                     <label for="resolutionFactor">Resolution Factor: <span class="badge" id="resolutionBadge">1.0</span></label>
                     <input type="range" id="resolutionFactor" min="0.1" max="1.0" value="1.0" step="0.1">
                 </div>

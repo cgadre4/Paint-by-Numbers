@@ -34,10 +34,12 @@ Use one server worker. Jobs are owned by that process; multi-worker deployment i
 ## Workflow
 
 1. Browse or drop a PNG, JPEG, WebP, or BMP still image.
-2. Choose the number of paints, resolution, smoothing, region size, and label settings.
+2. Choose the number of paints, resolution, smoothing, region size, and label settings. **Perceptual (Lab)** color matching and **Protect detected human eyes** are enabled by default; **Classic (RGB)** remains available.
 3. Select **Process Image** (or Ctrl/Cmd+Enter). **Stop** cancels processing. Reset and new uploads invalidate earlier results.
 4. Click a palette number to highlight its regions; click again to clear it. Wheel/slider zoom and drag-to-pan affect all three canvases.
 5. Download template and palette as PNG or PDF. **Print Ready View** isolates the template; browser printing uses the clean template without highlighting or viewport transforms.
+
+For portraits, start with 16-32 colors. Eye protection runs locally using bundled frontal-face/eye detectors. It uses gentler smoothing in detected eyes, preserves their palette regions during cleanup, draws thin eye outlines, and keeps numbers outside the eye boxes. Tiny eye details may need painting from the color preview without numbers. Detection can miss small, angled, or obscured faces and does not target animal eyes; review the output and detection notice.
 
 Changing processing settings invalidates the current result. Processing is explicit; changing a slider does not automatically launch a job.
 
@@ -48,9 +50,9 @@ Changing processing settings invalidates the current result. Processing is expli
 - Two jobs can run concurrently. Processing times out after five minutes.
 - Finished jobs expire after 15 minutes; at most eight finished jobs are retained. Download results before they expire. Temporary data is removed on expiry and normal shutdown.
 - Template PDF fits a raster template on one A4 page (landscape for wide images), with 10 mm margins. It is not a vector PDF. Palette PDF includes all colors, numbers, hex values, and RGB values.
-- Small regions merge only into edge-adjacent regions, using color similarity and shared boundary length. Small unnumberable regions receive additional conservative cleanup; stronger contrasts and large thin features are preserved.
+- Except for protected eye regions, small regions merge only into edge-adjacent regions, using color similarity and shared boundary length. Small unnumberable regions receive additional conservative cleanup; stronger contrasts and large thin features are preserved.
 - Numbers are placed only when their complete bounding box fits inside a region. If some regions cannot fit a number, the app reports how many. Physical canvas sizing, advanced simplification, and manual region editing are future work.
-- K-means is randomized. Exact palette order and pixel output can vary between runs.
+- Color matching uses OpenCV K-means in float CIELab by default, or RGB when selected. K-means is randomized. Exact palette order and pixel output can vary between runs.
 - OpenCL is attempted for bilateral filtering with CPU fallback. K-means and region work currently use the CPU.
 
 ## Tests
@@ -77,15 +79,23 @@ Tests cover processing and data contracts; image/parameter limits; decoding, ori
 uv run --locked python -m benchmarks.run
 uv run --locked python -m benchmarks.run --colors 32 --output .local/benchmarks-32
 uv run --locked python -m benchmarks.photos --download
+uv run --locked python -m benchmarks.faces
 ```
 
 The benchmark compares the former cleanup with the current algorithm on six seeded synthetic images, with identical K-means input for both methods. It records region/label counts, color distortion, stage timings, and comparison PNGs under ignored `.local/benchmarks/`. Add your own photographs with `--images path/to/photo.jpg`; they remain local. See [benchmark methodology and options](benchmarks/README.md). The photo benchmark optionally downloads six credited, checksum-pinned public-domain/CC0 photographs and compares the current cleanup/renderer against the previous shipped version at 8, 16, and 32 colors. Downloads and generated reports stay under ignored `.local/`. See [real-photo results and tradeoffs](benchmarks/PHOTO_RESULTS.md); this small corpus does not establish quality for every photograph.
+
+The historical cleanup benchmarks retain RGB quantization for comparable results. The facial benchmark compares RGB/Lab with and without eye protection against a common source-image reference, across two seeds and three palette sizes. See [facial-detail results and limitations](benchmarks/FACIAL_RESULTS.md).
+
+## API options
+
+Alongside the existing numeric fields, `POST /api/process/start` accepts multipart `color_space` (`lab` or `rgb`, default `lab`) and `protect_eyes` (`true` or `false`, default `true`). Results include these settings and `eye_protection` with `enabled`, `detected_faces`, and `boxes` as `[x, y, width, height]` in processed-image pixels. Detection metadata describes locations, not identities.
 
 ## Code map
 
 - `server.py`: FastAPI routes, bounded multipart input, lifecycle, static serving.
 - `jobs.py`: spawned workers, progress snapshots, timeouts, retention, and cleanup.
 - `pipeline.py`: input normalization, OpenCV quantization, and numbered template rendering.
+- `facial.py`: bounded local human-eye detection and gentle eye filtering.
 - `regions.py`: edge-adjacent, color-aware region merging and shared label-fit geometry.
 - `benchmarks/`: synthetic and downloaded-photo benchmarks, pinned source credits, paired measurements, and visual comparisons.
 - `exports.py`: clean template/palette downloads and A4 PDF layout.

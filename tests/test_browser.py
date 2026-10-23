@@ -241,8 +241,32 @@ def test_poll_network_failure_is_bounded_and_recoverable(page):
     upload(page)
     page.route('**/api/process/status/*', lambda route: route.abort())
     page.locator('#processBtn').click()
+    expect(page.locator('#colorSpace')).to_be_disabled()
+    expect(page.locator('#protectEyes')).to_be_disabled()
     expect(page.locator('#statusMessage')).to_contain_text('Processing could not be completed', timeout=15000)
     expect(page.locator('#stopBtn')).to_be_hidden()
     expect(page.locator('#resultsContainer')).to_be_hidden()
     page.unroute('**/api/process/status/*')
     complete(page)
+
+
+def test_color_and_eye_controls_submit_invalidate_and_reset(page):
+    expect(page.locator('#colorSpace')).to_have_value('lab')
+    expect(page.locator('#protectEyes')).to_be_checked()
+    upload(page)
+    page.locator('#colorSpace').select_option('rgb')
+    page.locator('#protectEyes').uncheck()
+    complete(page)
+    job_id = page.locator('#downloadTemplatePNG').get_attribute('href').split('/')[-2]
+    result = page.request.get(f'/api/process/status/{job_id}').json()['result']
+    assert result['parameters']['color_space'] == 'rgb'
+    assert result['parameters']['protect_eyes'] is False
+    assert result['eye_protection'] == {'enabled': False, 'detected_faces': 0, 'boxes': []}
+    page.locator('#colorSpace').select_option('lab')
+    expect(page.locator('#resultsContainer')).to_be_hidden()
+    complete(page)
+    page.locator('#protectEyes').check()
+    expect(page.locator('#resultsContainer')).to_be_hidden()
+    page.locator('#resetBtn').click()
+    expect(page.locator('#colorSpace')).to_have_value('lab')
+    expect(page.locator('#protectEyes')).to_be_checked()

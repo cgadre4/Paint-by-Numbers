@@ -1,5 +1,12 @@
 # Status Log - Paint-by-Numbers App
 
+## 2026-10-22: Perceptual color matching and protected eyes (current implementation)
+[DONE] Compared RGB and float-Lab K-means, with/without eye protection, in 36 photo/palette/seed cases plus six size/seed checks. Selected Lab plus eye protection as the default; kept Classic RGB and a protection toggle. See benchmarks/FACIAL_RESULTS.md for all measured tradeoffs.
+[DONE] Added bounded local human-eye detection, mild filtering within detected eyes, protected component merging, one-pixel eye outlines, and number exclusion from eye boxes. Added result metadata and explicit detection/unnumbered-detail notices. No new dependency or remote image upload.
+[DONE] Added API validation and omitted-option defaults, synchronized controls/reset/export invalidation, and 20 regression cases. All 87 local tests passed, including 9 real-browser workflows. Corrected the omitted checkbox-form default found by the new API regression.
+[DONE] Reran synthetic and historical RGB photo benchmarks; checked both real portraits through the browser and all four exports, mobile layout, face comparisons, portrait/landscape templates, and 32-color palette output. Updated README and AGENTS contracts.
+Verification: mean human-eye DE76 16.137 -> 9.599; eye-edge F1 75.625% -> 92.459%; unnumbered total 3,517 -> 4,360. All protected eye pixels retain their quantized IDs through cleanup. Detection and low-palette quantization remain best-effort; two human subjects do not establish general quality. Commit/push and exact-SHA CI results are reported after publication completes.
+
 ## 2026-10-22: Real-photo benchmark and detail-preserving cleanup (current implementation)
 [DONE] Recorded standing user authorization to commit/push completed, verified changes and check every required CI job for the exact pushed SHA. Publication results are reported after GitHub completes the run.
 [DONE] Downloaded six credited public-domain/CC0 photos (portraits, landscapes, fur, macro flower) into ignored local storage. Added checksum-pinned source metadata, opt-in downloads, cached quantization, a frozen f8cd6b0 cleanup/renderer baseline, and paired JSON/Markdown/PNG reports.

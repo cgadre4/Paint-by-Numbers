@@ -114,11 +114,15 @@ async def start_processing(
     area_min: int = Form(..., ge=10, le=500),
     stroke_width: int = Form(..., ge=1, le=4),
     font_scale: float = Form(..., ge=0.5, le=2.0),
+    color_space: Literal["rgb", "lab"] = Form("lab"),
+    # A bool Form treats an absent checkbox as False; preserve our API default.
+    protect_eyes: Literal["true", "false"] = Form("true"),
 ):
     params = dict(k=k, resolution_factor=resolution_factor, bilateral_diameter=bilateral_diameter,
                   sigma_color=sigma_color, area_min=area_min, stroke_width=stroke_width, font_scale=font_scale)
     if not all(math.isfinite(value) for value in params.values()):
         raise HTTPException(422, "Parameters must be finite numbers.")
+    params.update(color_space=color_space, protect_eyes=(protect_eyes == "true"))
     try:
         async with api_app.state.upload_lock:
             data = await file.read(MAX_UPLOAD_BYTES + 1)
