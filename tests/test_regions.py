@@ -118,3 +118,47 @@ def test_seeded_benchmark_produces_repeatable_metrics_and_artifacts(tmp_path):
     assert (tmp_path/'fixture.png').is_file() and (tmp_path/'report.md').is_file()
     assert all(len(samples) == 2 and min(samples) >= 0 for samples in result['seconds_samples'].values())
     assert report['cases'][0]['metrics']['adjacent']['unnumbered_regions'] <= result['metrics']['legacy']['unnumbered_regions']
+
+
+def test_equal_size_fragments_choose_similar_color_not_component_id():
+    labels = np.full((40, 40), 2, np.int32)
+    labels[18:20, 18:20] = 0
+    labels[18:20, 20:22] = 1
+    centers = np.array([[10]*3, [20]*3, [240]*3], np.float32)
+    cleaned = cleanup_regions(labels, 3, 5, centers)
+    assert np.all(cleaned[18:20, 18:22] == 1)
+    assert np.all(cleaned[:18] == 2)
+
+
+def test_extra_merge_preserves_strong_boundary_to_third_region():
+    labels = np.zeros((50, 70), np.int32)
+    labels[:, 35:38] = 1
+    labels[:, 38:] = 2
+    centers = np.array([[90]*3, [110]*3, [50]*3], np.float32)
+    assert np.array_equal(cleanup_regions(labels, 3, 10, centers), labels)
+    # A moderate-color merge can help when the strong boundary remains strong.
+    centers = np.array([[90]*3, [118]*3, [200]*3], np.float32)
+    cleaned = cleanup_regions(labels, 3, 10, centers)
+    assert np.all(cleaned[:, :38] == 0)
+    assert np.all(cleaned[:, 38:] == 2)
+
+
+def test_all_digit_glyphs_include_antialiasing_and_fit_exact_boxes():
+    from regions import label_glyph
+    for color in range(32):
+        for scale in (0.3, 0.5, 1.0, 2.0):
+            glyph = label_glyph(color, scale)
+            assert glyph.any() and not glyph.flags.writeable
+            assert glyph[0].any() and glyph[-1].any()
+            assert glyph[:, 0].any() and glyph[:, -1].any()
+            # Independently rasterize on an oversized canvas: no ink was clipped.
+            reference = np.zeros((150, 200), np.uint8)
+            cv2.putText(reference, str(color+1), (20, 100), cv2.FONT_HERSHEY_SIMPLEX,
+                        scale, 255, 1, cv2.LINE_AA)
+            x, y, w, h = cv2.boundingRect(reference)
+            assert np.array_equal(glyph, reference[y:y+h, x:x+w])
+        bw, bh, _, pad = label_dimensions(color, 2, 0.3)
+        labels = np.full((bh, bw), color, np.int32)
+        template, placements, missing = extract_contours_and_label(labels, 32, 2, 0.3)
+        assert missing == 0 and placements == [{'id': color+1, 'box': [0, 0, bw, bh]}]
+        assert np.array_equal(template[pad:bh-pad, pad:bw-pad, 0], 255-label_glyph(color, 0.3))

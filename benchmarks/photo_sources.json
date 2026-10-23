@@ -1,0 +1,62 @@
+[
+  {
+    "id": "astronaut",
+    "filename": "astronaut.png",
+    "category": "portrait",
+    "author": "NASA",
+    "license": "Public domain (NASA)",
+    "source_url": "https://scikit-image.org/docs/stable/api/skimage.data.html#skimage.data.astronaut",
+    "download_url": "https://raw.githubusercontent.com/scikit-image/scikit-image/v0.25.2/skimage/data/astronaut.png",
+    "sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5"
+  },
+  {
+    "id": "obama",
+    "filename": "obama.jpg",
+    "category": "portrait",
+    "author": "Pete Souza / White House",
+    "license": "US federal government public domain",
+    "source_url": "https://commons.wikimedia.org/wiki/File:President_Barack_Obama.jpg",
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/8/8d/President_Barack_Obama.jpg",
+    "sha256": "744dd848fbb0584229169e01c4944664957c62495fb9e8af514a088ebca43e19"
+  },
+  {
+    "id": "mountain_lake",
+    "filename": "mountain_lake.jpg",
+    "category": "landscape",
+    "author": "Veri Ivanova",
+    "license": "CC0-1.0",
+    "source_url": "https://commons.wikimedia.org/wiki/File:Lake_in_a_mountain_valley_(Unsplash).jpg",
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/d/d4/Lake_in_a_mountain_valley_%28Unsplash%29.jpg",
+    "sha256": "6abf5af827dcc2fb2575666debcfdf3ba821488458cec134f52e359053905fc0"
+  },
+  {
+    "id": "coast",
+    "filename": "coast.jpg",
+    "category": "landscape",
+    "author": "Jakob Owens",
+    "license": "CC0-1.0",
+    "source_url": "https://commons.wikimedia.org/wiki/File:The_Coast_(Unsplash).jpg",
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/5/52/The_Coast_%28Unsplash%29.jpg",
+    "sha256": "490fd8c107014274cbfe834175e114aec004f1e6c38f319593504ab2894dc4a6"
+  },
+  {
+    "id": "chelsea",
+    "filename": "chelsea.png",
+    "category": "detail",
+    "author": "Stefan van der Walt",
+    "license": "CC0-1.0",
+    "source_url": "https://scikit-image.org/docs/stable/api/skimage.data.html#skimage.data.chelsea",
+    "download_url": "https://raw.githubusercontent.com/scikit-image/scikit-image/v0.25.2/skimage/data/chelsea.png",
+    "sha256": "596aa1e7cb875eb79f437e310381d26b338a81c2da23439704a73c4651e8c4bb"
+  },
+  {
+    "id": "flower",
+    "filename": "flower.jpg",
+    "category": "detail",
+    "author": "Jon Sullivan",
+    "license": "Public domain dedication",
+    "source_url": "https://commons.wikimedia.org/wiki/File:Flower_petals_macro.jpg",
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/1/18/Flower_petals_macro.jpg",
+    "sha256": "dec9865145c1f2fadd0d86c8376974a9a4d66b8a39e88dbd40d594d4ea867821"
+  }
+]

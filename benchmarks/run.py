@@ -30,18 +30,18 @@ def quality(labels, quantized, centers, source, placements, missing, area_min):
                 source_rgb_mae=round(float(np.abs(preview.astype(float)-source.astype(float)).mean()), 4))
 
 
-def save_comparison(path, source, outputs, metrics):
+def save_comparison(path, source, outputs, metrics, names=('legacy', 'adjacent')):
     h, w = source.shape[:2]
     sheet = Image.new('RGB', (w * 3, (h + 32) * 2), 'white')
     draw = ImageDraw.Draw(sheet)
     def panel(image, col, row, title):
         sheet.paste(Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)), (col*w, row*(h+32)+32))
         draw.text((col*w+8, row*(h+32)+8), title, fill='black')
-    panel(source, 0, 0, 'Source (synthetic unless custom input supplied)')
-    for col, name in enumerate(('legacy', 'adjacent'), start=1):
+    panel(source, 0, 0, 'Source')
+    for col, name in enumerate(names, start=1):
         panel(outputs[name][0], col, 0, name + ' preview')
         panel(outputs[name][1], col, 1, name + ' numbered template')
-    for index, name in enumerate(('legacy', 'adjacent')):
+    for index, name in enumerate(names):
         metric = metrics[name]
         draw.text((8, h+55+index*80), f'{name}: {metric["regions"]} regions\n'
                   f'{metric["small_regions"]} small; {metric["unnumbered_regions"]} unnumbered\n'

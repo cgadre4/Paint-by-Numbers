@@ -115,3 +115,13 @@ Any subsequent bug fixes, enhancements, or feature additions will be logged here
 - Added bounded, contrast-aware merging for small regions unable to fit a number; preserved larger/contrasting details and the existing visible warning when numbering remains impossible.
 - Shared label dimensions between cleanup and rendering, retaining palette IDs and complete label-box containment.
 - Added 12 regressions; all 52 local tests passed. Synthetic unnumbered-region totals decreased from 250 to 121 at default settings and from 910 to 119 at 32 colors. See benchmarks/RESULTS.md for tradeoffs and scope.
+
+## 2026-10-22 - Real-photo evaluation and cleanup refinement
+
+- Added a six-photo public-domain/CC0 corpus manifest with source credits and pinned SHA-256 hashes, explicit downloads, cached identical quantization, frozen shipped cleanup/renderer comparison, and quality/timing/visual reports. Images stay in ignored local storage; CI uses synthetic offline fixtures.
+- Let equally small fragments select similar-colored neighbors without component-ID bias. Broadened extra fit merges to distance 0.12 while preserving strong third-region boundaries at 0.2. Kept area limits, minimum font size, and visible missing-number warnings.
+- Fit and render numbers using the same tightly cropped antialiased glyph and padded box.
+- Across 18 photo/settings cases: 2,534 -> 1,716 unnumbered regions, mean strong-edge recall 82.01% -> 83.61%, and mean RGB MAE 10.28 -> 10.75. A second seed/size run reduced missing counts 39.1%. Not every case improves; details and tradeoffs are in benchmarks/PHOTO_RESULTS.md.
+- All 67 local tests passed, including browser workflows; synthetic benchmarks and photographic/PNG/PDF visual checks completed. Updated contributor and benchmark documentation. No new CI result or publication claimed.
+
+- Standing release preference: after completed work passes the full suite and relevant checks, commit/push by default and verify all required GitHub CI jobs for that exact commit; preserve unrelated changes and inspect public contents first.

@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from regions import cleanup_regions, label_dimensions
+from regions import cleanup_regions, label_dimensions, label_glyph
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_INPUT_PIXELS = 40_000_000
@@ -99,10 +99,9 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale):
             x, y, w, h, _ = stats[component]
             region = (components[y:y+h, x:x+w] == component).astype(np.uint8)
             distance = cv2.distanceTransform(np.pad(region, 1), cv2.DIST_L2, 5)[1:-1, 1:-1]
-            text = str(color_idx + 1)
             found = False
             for scale in np.linspace(font_scale, min(font_scale, 0.3), 8):
-                bw, bh, th, padding = label_dimensions(color_idx, stroke_width, scale)
+                bw, bh, _, padding = label_dimensions(color_idx, stroke_width, scale)
                 if bw > w or bh > h:
                     continue
                 fits = cv2.erode(region, np.ones((bh, bw), np.uint8),
@@ -111,8 +110,11 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale):
                     continue
                 cy, cx = np.unravel_index(np.argmax(distance * fits), region.shape)
                 left, top = int(x + cx - bw // 2), int(y + cy - bh // 2)
-                cv2.putText(template, text, (left + padding, top + padding + th),
-                            cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), 1, cv2.LINE_AA)
+                glyph = label_glyph(color_idx, float(scale))
+                gy, gx = top + padding, left + padding
+                ink = 255 - glyph[:, :, None]
+                target = template[gy:gy+glyph.shape[0], gx:gx+glyph.shape[1]]
+                np.minimum(target, ink, out=target)
                 placements.append({"id": color_idx + 1, "box": [left, top, bw, bh]})
                 found = True
                 break

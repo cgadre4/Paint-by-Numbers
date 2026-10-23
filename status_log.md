@@ -1,6 +1,14 @@
 # Status Log - Paint-by-Numbers App
 
-## 2026-10-22: Image benchmark and adjacent-region cleanup (current implementation)
+## 2026-10-22: Real-photo benchmark and detail-preserving cleanup (current implementation)
+[DONE] Recorded standing user authorization to commit/push completed, verified changes and check every required CI job for the exact pushed SHA. Publication results are reported after GitHub completes the run.
+[DONE] Downloaded six credited public-domain/CC0 photos (portraits, landscapes, fur, macro flower) into ignored local storage. Added checksum-pinned source metadata, opt-in downloads, cached quantization, a frozen f8cd6b0 cleanup/renderer baseline, and paired JSON/Markdown/PNG reports.
+[DONE] Removed component-order bias between equally small merge targets. Expanded extra fit merges with a strong-boundary preservation guard, and shared exact antialiased glyph bounds between fit checks and rendering without lowering the minimum font scale.
+[DONE] Evaluated 18 photo/palette cases and six second-seed/size cases with three repetitions. Main missing-region totals: 2,534 -> 1,716 (32.3%); mean strong-edge recall: 82.01% -> 83.61%. Mean RGB error rose 10.28 -> 10.75; two cases have more missing numbers. See benchmarks/PHOTO_RESULTS.md for full tradeoffs and remaining detail loss.
+[DONE] Added 15 regressions; all 67 local tests passed, including 8 real-browser workflows. Reran synthetic benchmarks, inspected photographic comparisons and current landscape/portrait/32-color PDF exports, and updated README/AGENTS guidance. No new remote CI or push is claimed.
+Verification: photographs remain local and ignored; no external image upload or new dependency. K-means is unchanged. Some fine features remain unnumbered, and edge recall is a geometric proxy rather than semantic accuracy.
+
+## 2026-10-22: Image benchmark and adjacent-region cleanup (first iteration)
 [DONE] Replaced wide-dilation majority-color cleanup with a four-connected region graph. Merges use shared edges, RGB similarity, boundary length, and updated region areas; same-color bridges coalesce immediately.
 [DONE] Added conservative extra merging for small regions that cannot fit a number. Shared renderer/cleanup geometry handles stroke padding and two-digit IDs. Larger or contrasting thin details remain protected and may still be reported as unnumbered.
 [DONE] Added seeded synthetic and optional local-image benchmarks with fixed quantization inputs, legacy cleanup reference, per-stage timing samples, quality metrics, JSON/Markdown reports, and comparison PNGs.

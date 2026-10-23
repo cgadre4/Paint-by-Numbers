@@ -76,9 +76,10 @@ Tests cover processing and data contracts; image/parameter limits; decoding, ori
 ```sh
 uv run --locked python -m benchmarks.run
 uv run --locked python -m benchmarks.run --colors 32 --output .local/benchmarks-32
+uv run --locked python -m benchmarks.photos --download
 ```
 
-The benchmark compares the former cleanup with the current algorithm on six seeded synthetic images, with identical K-means input for both methods. It records region/label counts, color distortion, stage timings, and comparison PNGs under ignored `.local/benchmarks/`. Add your own photographs with `--images path/to/photo.jpg`; they remain local. See [benchmark methodology and options](benchmarks/README.md). Synthetic results are not a claim about all photographs.
+The benchmark compares the former cleanup with the current algorithm on six seeded synthetic images, with identical K-means input for both methods. It records region/label counts, color distortion, stage timings, and comparison PNGs under ignored `.local/benchmarks/`. Add your own photographs with `--images path/to/photo.jpg`; they remain local. See [benchmark methodology and options](benchmarks/README.md). The photo benchmark optionally downloads six credited, checksum-pinned public-domain/CC0 photographs and compares the current cleanup/renderer against the previous shipped version at 8, 16, and 32 colors. Downloads and generated reports stay under ignored `.local/`. See [real-photo results and tradeoffs](benchmarks/PHOTO_RESULTS.md); this small corpus does not establish quality for every photograph.
 
 ## Code map
 
@@ -86,7 +87,7 @@ The benchmark compares the former cleanup with the current algorithm on six seed
 - `jobs.py`: spawned workers, progress snapshots, timeouts, retention, and cleanup.
 - `pipeline.py`: input normalization, OpenCV quantization, and numbered template rendering.
 - `regions.py`: edge-adjacent, color-aware region merging and shared label-fit geometry.
-- `benchmarks/`: seeded synthetic fixtures, paired old/new cleanup measurements, and visual comparisons.
+- `benchmarks/`: synthetic and downloaded-photo benchmarks, pinned source credits, paired measurements, and visual comparisons.
 - `exports.py`: clean template/palette downloads and A4 PDF layout.
 - `static/`: vanilla HTML/CSS/JavaScript interface, with no npm build step.
 - `tests/`: pytest API/lifecycle tests and Playwright browser tests.

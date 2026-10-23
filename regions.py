@@ -1,18 +1,35 @@
 """Connected-region cleanup using shared edges and actual label-fit checks."""
 import heapq
+from functools import lru_cache
 
 import cv2
 import numpy as np
 
 # Euclidean RGB distance normalized by the RGB cube diagonal. This conservative
 # guard applies only to extra label-fit merges, not the user-selected area cutoff.
-MAX_NUMBERLESS_COLOR_DISTANCE = 0.08
+MAX_NUMBERLESS_COLOR_DISTANCE = 0.12
+STRONG_BOUNDARY_DISTANCE = 0.2
+
+
+@lru_cache(maxsize=1024)
+def label_glyph(color_idx, scale):
+    """Tight antialiased digit bitmap; include every nonzero edge pixel."""
+    text = str(color_idx + 1)
+    (tw, th), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, 1)
+    glyph = np.zeros((th + baseline + 8, tw + 8), np.uint8)
+    cv2.putText(glyph, text, (4, th + 4), cv2.FONT_HERSHEY_SIMPLEX,
+                scale, 255, 1, cv2.LINE_AA)
+    x, y, w, h = cv2.boundingRect(glyph)
+    glyph = glyph[y:y+h, x:x+w].copy()
+    glyph.flags.writeable = False
+    return glyph
 
 
 def label_dimensions(color_idx, stroke_width, scale):
-    (tw, th), baseline = cv2.getTextSize(str(color_idx + 1), cv2.FONT_HERSHEY_SIMPLEX, scale, 1)
+    glyph = label_glyph(int(color_idx), float(scale))
+    height, width = glyph.shape
     padding = stroke_width + 1
-    return tw + 2 * padding, th + baseline + 2 * padding, th, padding
+    return width + 2 * padding, height + 2 * padding, height, padding
 
 
 def label_fits(region, color_idx, stroke_width, font_scale):
@@ -115,12 +132,21 @@ def cleanup_regions(labels, k, area_min, centers=None, stroke_width=1, font_scal
         total_boundary = sum(adjacency[node].values())
         candidates = []
         for neighbor, boundary in adjacency[node].items():
-            # Anchoring to a larger region prevents thin features from pulling a
-            # large, already paintable neighbor into their color.
-            if (areas[neighbor], -neighbor) < (areas[node], -node):
+            # Extra fit merges stay anchored to larger regions. Below the explicit
+            # area cutoff, allow an equally small, closer-colored neighbor: forcing a
+            # larger target can erase details beside a contrasting background.
+            if not small and (areas[neighbor], -neighbor) < (areas[node], -node):
                 continue
             distance = float(distances[colors[node], colors[neighbor]]) if distances is not None else 0.0
             if not small and (distances is None or distance > MAX_NUMBERLESS_COLOR_DISTANCE):
+                continue
+            # Do not remove an existing strong edge to a third region merely
+            # to make space for a number. Explicit area_min merges still apply.
+            if not small and any(
+                distances[colors[node], colors[other]] >= STRONG_BOUNDARY_DISTANCE
+                and distances[colors[neighbor], colors[other]] < STRONG_BOUNDARY_DISTANCE
+                for other in adjacency[node]
+            ):
                 continue
             score = distance + 0.25 * (1 - boundary / total_boundary)
             candidates.append((score, -boundary, -int(areas[neighbor]), neighbor))
