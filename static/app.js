@@ -28,7 +28,12 @@
                 ? state.parameters[name].toFixed(1) : state.parameters[name];
             el[slider].disabled = Boolean(state.active);
         }
-        el.canvasWidth.value = state.parameters.canvas_width_cm || '';
+        const divisor = el.canvasUnit.value === 'in' ? 2.54 : 1;
+        el.canvasWidth.min = 5 / divisor; el.canvasWidth.max = 200 / divisor;
+        el.canvasWidth.value = state.parameters.canvas_width_cm ? Number((state.parameters.canvas_width_cm / divisor).toFixed(6)) : '';
+        el.paperSize.value = state.parameters.paper_size; el.sizingMode.value = state.parameters.sizing_mode;
+        el.paperSize.disabled = el.sizingMode.disabled = el.canvasUnit.disabled = Boolean(state.active);
+        for (const key of ['stroke_width', 'font_scale']) el[controls[key][0]].disabled = Boolean(state.active) || state.parameters.sizing_mode === 'physical';
         el.canvasWidth.disabled = el.preset.disabled = Boolean(state.active);
         el.colorSpace.value = state.parameters.color_space;
         el.protectEyes.checked = state.parameters.protect_eyes;
@@ -72,7 +77,7 @@
             el[`${name}Placeholder`].classList.remove('hidden');
             el[`${name}Placeholder`].textContent = 'Process an image to preview';
         }
-        for (const name of ['TemplatePNG', 'TemplatePDF', 'PalettePNG', 'PalettePDF']) {
+        for (const name of ['TemplatePNG', 'TemplatePDF', 'PalettePNG', 'PalettePDF', 'TilesPDF']) {
             el[`download${name}`].removeAttribute('href');
         }
     }
@@ -226,7 +231,7 @@
                 for (let i = 0; i < state.missing.length; i++) state.missing[i] = missingRGBA[i * 4];
                 labelCanvas.width = labelCanvas.height = 1;
                 state.result = result; state.template = template;
-                el.canvasInfo.textContent = result.canvas ? `Canvas: ${(result.canvas.width_mm / 10).toFixed(1)} × ${(result.canvas.height_mm / 10).toFixed(1)} cm; ${result.canvas.effective_dpi} ppi. ${result.canvas.custom ? 'Custom PDF: print at 100%, without Fit to page.' : 'PDF fits A4 with 10 mm margins.'}` : '';
+                el.canvasInfo.textContent = result.canvas ? `Canvas: ${(result.canvas.width_mm / 10).toFixed(1)} × ${(result.canvas.height_mm / 10).toFixed(1)} cm; ${result.canvas.effective_dpi} ppi. ${result.canvas.custom ? 'Custom PDF: print at 100%, without Fit to page.' : `PDF fits ${result.parameters.paper_size.toUpperCase()} with 10 mm margins.`}` : '';
                 draw(el.quantizedCanvas, preview); draw(el.templateCanvas, template);
                 transform();
                 el.quantizedPlaceholder.classList.add('hidden');
@@ -238,6 +243,12 @@
                             `/api/process/export/${run.jobId}/${kind}.${format}`;
                     }
                 }
+                el.downloadTilesPDF.href = `/api/process/export/${run.jobId}/tiles.pdf`;
+                let printStyle = document.getElementById('printPaperStyle');
+                if (!printStyle) { printStyle = document.createElement('style'); printStyle.id = 'printPaperStyle'; document.head.append(printStyle); }
+                const paper = result.parameters.paper_size === 'letter' ? 'letter' : 'A4';
+                const orientation = result.image_dimensions.width > result.image_dimensions.height ? 'landscape' : 'portrait';
+                printStyle.textContent = `@media print { @page { size: ${paper} ${orientation}; margin: 10mm; } #printTemplate { max-width: 100%; max-height: ${paper === 'letter' ? (orientation === 'landscape' ? 195.9 : 259.4) : (orientation === 'landscape' ? 190 : 277)}mm; } }`;
                 el.printTemplate.src = result.template_image;
                 el.resultsContainer.classList.remove('hidden');
                 state.active = null; updateControls();
@@ -377,15 +388,20 @@
             updateControls();
         });
     }
+    el.canvasUnit.addEventListener('change', updateControls);
+    for (const [id, key] of [['paperSize', 'paper_size'], ['sizingMode', 'sizing_mode']]) el[id].addEventListener('change', () => {
+        state.parameters[key] = el[id].value; invalidate(); clearResults(); updateControls();
+        message('Painting dimensions changed. Process again to update numbers and exports.');
+    });
     el.canvasWidth.addEventListener('change', () => {
-        if (!el.canvasWidth.checkValidity()) return message('Choose a canvas width from 5 to 200 cm, or leave it blank for A4.', 'error');
-        state.parameters.canvas_width_cm = Number(el.canvasWidth.value) || 0;
+        if (!el.canvasWidth.checkValidity()) return message(`Choose a canvas width from ${Number(el.canvasWidth.min).toFixed(2)} to ${Number(el.canvasWidth.max).toFixed(2)} ${el.canvasUnit.value}, or leave it blank to fit the selected paper.`, 'error');
+        state.parameters.canvas_width_cm = Number(el.canvasWidth.value) * (el.canvasUnit.value === 'in' ? 2.54 : 1) || 0;
         invalidate(); updateControls();
         message('Canvas width changed. Process to update export and readability checks.');
     });
     el.preset.addEventListener('change', () => {
         if (!presets[el.preset.value]) return;
-        state.parameters = {...presets[el.preset.value], canvas_width_cm: state.parameters.canvas_width_cm};
+        state.parameters = {...presets[el.preset.value], canvas_width_cm: state.parameters.canvas_width_cm, paper_size: state.parameters.paper_size};
         invalidate(); updateControls();
         message('Preset applied. Review the result, especially fine facial details.');
     });
@@ -409,7 +425,7 @@
         el.printReadyBtn.setAttribute('aria-pressed', String(ready));
         resetView(); drawHighlight();
     });
-    for (const name of ['TemplatePNG', 'TemplatePDF', 'PalettePNG', 'PalettePDF']) el[`download${name}`].addEventListener('click', download);
+    for (const name of ['TemplatePNG', 'TemplatePDF', 'PalettePNG', 'PalettePDF', 'TilesPDF']) el[`download${name}`].addEventListener('click', download);
     document.addEventListener('keydown', event => {
         if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); void processImage(); }
     });

@@ -5,7 +5,7 @@ $previousEnvironment = $env:UV_PROJECT_ENVIRONMENT
 $previousNode = $env:PLAYWRIGHT_NODEJS_PATH
 try {
     if (-not $env:UV_PROJECT_ENVIRONMENT) {
-        $env:UV_PROJECT_ENVIRONMENT = Join-Path $env:LOCALAPPDATA 'PaintByNumbers\venv-1.2'
+        $env:UV_PROJECT_ENVIRONMENT = Join-Path $env:LOCALAPPDATA 'PaintByNumbers\venv-1.3'
     }
     if (-not $env:PLAYWRIGHT_NODEJS_PATH) {
         $nodeCommand = Get-Command node -ErrorAction SilentlyContinue

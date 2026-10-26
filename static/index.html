@@ -32,9 +32,15 @@
                     <p class="control-help">Both presets protect detected eyes. Detailed designs take more time to paint.</p>
                 </div>
                 <div class="control-group">
-                    <label for="canvasWidth">Canvas width (cm, optional)</label>
-                    <input id="canvasWidth" type="number" min="5" max="200" step="0.1" placeholder="Auto: fit A4" aria-describedby="canvasHelp">
-                    <p id="canvasHelp" class="control-help">Height follows the image proportions. Custom PDF uses this exact size; print at 100%. No multi-page tiling. PNG keeps its pixel dimensions.</p>
+                    <label for="canvasWidth">Canvas width (optional)</label>
+                    <input id="canvasWidth" type="number" min="5" max="200" step="any" placeholder="Auto: fit paper" aria-describedby="canvasHelp">
+                    <label for="canvasUnit">Canvas units</label>
+                    <select id="canvasUnit"><option value="cm">Centimeters</option><option value="in">Inches</option></select>
+                    <label for="paperSize">Printer paper</label>
+                    <select id="paperSize"><option value="a4">A4</option><option value="letter">US Letter</option></select>
+                    <label for="sizingMode">Number and outline sizing</label>
+                    <select id="sizingMode"><option value="physical">Physical: readable at canvas size</option><option value="pixels">Pixels: advanced manual controls</option></select>
+                    <p id="canvasHelp" class="control-help">Height follows the image proportions. Physical mode targets numbers at least 2 mm tall and 0.3 mm outlines; fine details may remain unnumbered. The noise-removal cutoff stays in pixels. Print PDFs at 100%. PNG keeps its pixel dimensions.</p>
                     <p id="canvasInfo" class="control-help"></p>
                 </div>
                 <details id="advancedSettings"><summary>Advanced settings</summary>
@@ -107,6 +113,7 @@
                     <div class="export-group">
                         <h3>Download Template</h3>
                         <a id="downloadTemplatePNG" href="#" class="btn-secondary" download="template.png">📥 Download PNG</a>
+                        <a id="downloadTilesPDF" href="#" class="btn-secondary" download="tiles.pdf">Tiled PDF (100% scale)</a>
                         <a id="downloadTemplatePDF" href="#" class="btn-secondary" download="template.pdf">📄 Download PDF</a>
                     </div>
 

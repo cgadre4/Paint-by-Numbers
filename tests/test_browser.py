@@ -320,3 +320,31 @@ def test_presets_physical_canvas_keyboard_and_preview_memory(page):
     page.locator('#resetBtn').click()
     expect(page.locator('#canvasWidth')).to_have_value('')
     assert page.locator('#templateCanvas').evaluate('(c) => c.width') == 1
+
+
+def test_physical_units_paper_tiles_and_mode_invalidation(page):
+    upload(page)
+    page.locator('#canvasUnit').select_option('in')
+    page.locator('#canvasWidth').fill('16')
+    page.locator('#canvasWidth').dispatch_event('change')
+    page.locator('#paperSize').select_option('letter')
+    expect(page.locator('#strokeWidth')).to_be_disabled()
+    complete(page)
+    job=page.locator('#downloadTemplatePDF').get_attribute('href').split('/')[-2]
+    result=page.request.get(f'/api/process/status/{job}').json()['result']
+    assert result['parameters']['canvas_width_cm']==40.64
+    assert result['parameters']['paper_size']=='letter'
+    assert result['canvas']['minimum_number_height_mm']>=2
+    with page.expect_download() as event:
+        page.locator('#downloadTilesPDF').click()
+    download=event.value
+    pdf=PdfReader(download.path())
+    assert len(pdf.pages)>1
+    assert all('50 mm calibration' in p.extract_text() for p in pdf.pages)
+    assert 'letter landscape' in page.locator('#printPaperStyle').text_content()
+    page.locator('#sizingMode').select_option('pixels')
+    expect(page.locator('#resultsContainer')).to_be_hidden()
+    expect(page.locator('#strokeWidth')).to_be_enabled()
+    assert page.locator('#downloadTilesPDF').get_attribute('href') is None
+    page.locator('#canvasUnit').select_option('cm')
+    expect(page.locator('#canvasWidth')).to_have_value('40.64')

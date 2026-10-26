@@ -32,9 +32,10 @@ def label_dimensions(color_idx, stroke_width, scale):
     return width + 2 * padding, height + 2 * padding, height, padding
 
 
-def label_fits(region, color_idx, stroke_width, font_scale):
+def label_fits(region, color_idx, stroke_width, font_scale, minimum_font_scale=None):
     """Use the same minimum font size and complete padded box as the renderer."""
-    bw, bh, _, _ = label_dimensions(color_idx, stroke_width, min(font_scale, 0.3))
+    minimum = min(font_scale, 0.3) if minimum_font_scale is None else minimum_font_scale
+    bw, bh, _, _ = label_dimensions(color_idx, stroke_width, minimum)
     if region.shape[0] < bh or region.shape[1] < bw or np.count_nonzero(region) < bw * bh:
         return False
     return bool(cv2.erode(region, np.ones((bh, bw), np.uint8),
@@ -60,7 +61,7 @@ def component_map(labels, k):
 
 
 def cleanup_regions(labels, k, area_min, centers=None, stroke_width=1, font_scale=0.5,
-                    protected_mask=None):
+                    protected_mask=None, *, minimum_font_scale=None):
     """Merge smallest regions first, only across a shared pixel edge.
 
     Regions intersecting protected_mask retain their palette IDs, including tiny
@@ -97,8 +98,9 @@ def cleanup_regions(labels, k, area_min, centers=None, stroke_width=1, font_scal
     if centers is not None:
         palette = np.asarray(centers, np.float32)
         distances = np.linalg.norm(palette[:, None] - palette[None, :], axis=2) / (255 * np.sqrt(3))
+    minimum = min(font_scale, 0.3) if minimum_font_scale is None else minimum_font_scale
     limits = np.array([max(area_min * 4, np.prod(label_dimensions(c, stroke_width,
-                        min(font_scale, 0.3))[:2]) * 4) for c in range(k)])
+                        minimum)[:2]) * 4) for c in range(k)])
 
     def enqueue(node):
         if not protected[node] and adjacency[node] and areas[node] <= limits[colors[node]]:
@@ -135,7 +137,7 @@ def cleanup_regions(labels, k, area_min, centers=None, stroke_width=1, font_scal
         if not small:
             x, y, w, h = boxes[node]
             if label_fits((regions[y:y+h, x:x+w] == node).astype(np.uint8),
-                          int(colors[node]), stroke_width, font_scale):
+                          int(colors[node]), stroke_width, font_scale, minimum):
                 continue
         total_boundary = sum(adjacency[node].values())
         candidates = []

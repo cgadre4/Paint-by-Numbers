@@ -1,5 +1,12 @@
 # Status Log - Paint-by-Numbers App
 
+## 2026-10-26: Version 1.3 physical painting and tiled printing
+[DONE] Added bounded non-pickle cache/header validation and automatic rebuilding, including immutable hard-link replacement; reused contour scratch buffers. Added physical number-fit cleanup/rendering, centimetre/inch controls, A4/Letter orientation and exact-scale tiled PDFs with overlap, trim/alignment marks and a calibration ruler. Retained pixel mode and protected-eye invariants.
+[DONE] Final local suite: 140 passed; three extra real-photo browser workflows passed. Ruff, JavaScript syntax, whitespace and locked dependency advisory checks passed. Reviewed actual PDF/PNG output, 32-color palette, mobile UI and portrait crops.
+[DONE] Ran synthetic, 18 RGB photo, 36 facial plus six second-size/seed cases, and 120 paired physical comparisons (including repeated 40 cm controls). Added four pinned public-domain portraits and evaluation-only nose/mouth/eye boxes. No protected pixels recolored. Rejected all-speck conservative merging after severe missing-label regressions. See benchmarks/RELEASE_1_3_RESULTS.md for measured tradeoffs and detector limitations.
+[DONE] Reconciled the dated audit's current dispositions and updated project working rules. Binary transport, manual finishing/save, broader quality/accessibility/performance evaluation and recovery quotas remain open.
+Publication and local directory relocation follow validation; exact-SHA CI and the observed relocation result are reported after completion.
+
 ## 2026-10-26: Version 1.2 smaller browser release
 [DONE] Implemented the approved reliability/security fixes, including owned decode, bounded uploads, local request trust, cancellation identity, resilient cleanup/read leases and terminal-worker capacity handling. Upgraded Pillow 13, normalized ICC profiles, and fixed rounding/indexed-image scaling.
 [DONE] Added shared Simple/Detailed presets, custom physical canvas width/PDF geometry with readability warnings, bounded previews, compact review masks, keyboard/button panning, responsive views and contrast corrections. Added immutable color-analysis reuse and per-job export caching; kept full Lab K-means after a sampled-fit experiment showed detail regressions.

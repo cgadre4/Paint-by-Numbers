@@ -1,0 +1,42 @@
+[
+  {
+    "id": "yellen",
+    "filename": "yellen.jpg",
+    "category": "portrait",
+    "author": "United States Federal Reserve",
+    "license": "US federal government public domain",
+    "source_url": "https://commons.wikimedia.org/wiki/File:Janet_Yellen_official_portrait.jpg",
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/f/f2/Janet_Yellen_official_portrait.jpg",
+    "sha256": "2fe7a8ff672e9bbf5ffc63acc2f3c55946cf687e7a2db14d686b7494ad0c4679"
+  },
+  {
+    "id": "jemison",
+    "filename": "jemison.jpg",
+    "category": "portrait",
+    "author": "NASA",
+    "license": "US federal government public domain",
+    "source_url": "https://commons.wikimedia.org/wiki/File:Mae_Carol_Jemison.jpg",
+    "download_url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/55/Mae_Carol_Jemison.jpg/1920px-Mae_Carol_Jemison.jpg",
+    "sha256": "6b22c47b522210f9c8a898bcce559808b6e9709e3d9054df9d25e1a5f3c5883e"
+  },
+  {
+    "id": "ginsburg",
+    "filename": "ginsburg.jpg",
+    "category": "portrait",
+    "author": "Steve Petteway / Supreme Court of the United States",
+    "license": "US federal government public domain",
+    "source_url": "https://commons.wikimedia.org/wiki/File:Ruth_Bader_Ginsburg_2016_portrait.jpg",
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/7/76/Ruth_Bader_Ginsburg_2016_portrait.jpg",
+    "sha256": "3b7ca79ffa6305868d99ddb8ba70db4e6477d871bf839809ab573dfb5875c243"
+  },
+  {
+    "id": "powell",
+    "filename": "powell.jpg",
+    "category": "portrait",
+    "author": "United States Department of State",
+    "license": "US federal government public domain",
+    "source_url": "https://commons.wikimedia.org/wiki/File:Colin_Powell_official_Secretary_of_State_photo.jpg",
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/archive/2/22/20191012124354%21Colin_Powell_official_Secretary_of_State_photo.jpg",
+    "sha256": "0b065f0555d9f7905e406d1bbee297b38b57e9199cfc3a228f14b1cda3b66e3b"
+  }
+]
