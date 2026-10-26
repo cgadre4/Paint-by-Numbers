@@ -37,10 +37,14 @@ def make_export(result, kind, format_):
     output = io.BytesIO()
     dimensions = result["image_dimensions"]
     page = landscape(A4) if kind == "template" and dimensions["width"] > dimensions["height"] else A4
+    physical = result.get("canvas", {})
+    if kind == "template" and physical.get("custom"):
+        page = (physical["width_mm"] * 72 / 25.4, physical["height_mm"] * 72 / 25.4)
     pdf = canvas.Canvas(output, pagesize=page, pageCompression=1)
     pdf.setTitle("Paint-by-Numbers " + kind.title())
     width, height = page
-    margin = 28.35  # 10 mm; PDFs fit the image on one A4 page without cropping.
+    margin = 0 if kind == "template" and physical.get("custom") else 28.35
+    # Custom PDFs use exact canvas dimensions, printed at 100%; A4 retains 10 mm margins.
     if kind == "template":
         image = ImageReader(io.BytesIO(image_bytes(result["template_image"])))
         iw, ih = image.getSize()

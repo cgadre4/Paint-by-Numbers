@@ -8,63 +8,105 @@ from multiprocessing import freeze_support
 from pathlib import Path
 from typing import Literal
 from uuid import UUID
+from urllib.parse import urlsplit
 
-import cv2
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from exports import make_export
 from jobs import JobCapacityError, JobManager, JobNotFound
-from pipeline import InvalidImage, MAX_UPLOAD_BYTES, normalize_image
+from pipeline import MAX_UPLOAD_BYTES
+from settings import DEFAULTS, RANGES, PRESETS
 
 logger = logging.getLogger(__name__)
 
 
-class UploadLimitMiddleware:
-    """Bound the multipart request before Starlette can spool an unlimited body."""
+class LocalRequestMiddleware:
+    """Reject non-loopback hosts and cross-origin mutations before reading bodies."""
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        headers = dict(scope.get("headers", []))
+        host = headers.get(b"host", b"").decode("latin1")
+        try:
+            parsed = urlsplit("http://" + host)
+            valid = parsed.hostname in {"127.0.0.1", "localhost", "::1"} and parsed.username is None
+            origin = headers.get(b"origin")
+            if scope["method"] not in {"GET", "HEAD", "OPTIONS"}:
+                valid = valid and headers.get(b"sec-fetch-site", b"") != b"cross-site"
+                if origin:
+                    valid = valid and origin.decode("latin1") == scope.get("scheme", "http") + "://" + host
+        except ValueError:
+            valid = False
+        if not valid:
+            return await Response('{"detail":"Only same-origin local requests are allowed."}', status_code=403,
+                                  media_type="application/json")(scope, receive, send)
+        await self.app(scope, receive, send)
+
+
+class UploadLimitMiddleware:
+    """Bound admission, duration and bytes before multipart parsing."""
+    def __init__(self, app, max_uploads=2, upload_timeout=30):
+        self.app, self.max_uploads, self.upload_timeout = app, max_uploads, upload_timeout
+        self.active = 0
+
+    async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope.get("path") != "/api/process/start":
             return await self.app(scope, receive, send)
-        limit = MAX_UPLOAD_BYTES + 256 * 1024  # Allow multipart framing and parameter fields.
-        headers = dict(scope.get("headers", []))
+        async def reject(status, detail):
+            await Response('{"detail":"' + detail + '"}', status_code=status,
+                           media_type="application/json")(scope, receive, send)
+        limit = MAX_UPLOAD_BYTES + 256 * 1024
         try:
-            declared = int(headers.get(b"content-length", b"0"))
+            declared = int(dict(scope.get("headers", [])).get(b"content-length", b"0"))
         except ValueError:
-            return await Response("Invalid Content-Length", status_code=400)(scope, receive, send)
+            return await reject(400, "Invalid Content-Length")
+        if declared < 0:
+            return await reject(400, "Invalid Content-Length")
         if declared > limit:
-            return await Response(' {"detail":"Images must be 20 MB or smaller."}',
-                                  status_code=413, media_type="application/json")(scope, receive, send)
-        # Buffer a bounded request before multipart parsing. The context closes the
-        # spool on disconnect/oversize too, including requests without Content-Length.
-        with tempfile.SpooledTemporaryFile(max_size=1024 * 1024) as spool:
-            size = 0
-            while True:
-                message = await receive()
-                if message["type"] == "http.disconnect":
-                    return
-                chunk = message.get("body", b"")
-                size += len(chunk)
-                if size > limit:
-                    return await Response('{"detail":"Images must be 20 MB or smaller."}',
-                        status_code=413, media_type="application/json")(scope, receive, send)
-                spool.write(chunk)
-                if not message.get("more_body", False):
-                    break
-            spool.seek(0)
-            remaining = size
-            async def bounded_receive():
-                nonlocal remaining
-                if remaining <= 0:
-                    return {"type": "http.request", "body": b"", "more_body": False}
-                chunk = spool.read(65536)
-                remaining -= len(chunk)
-                return {"type": "http.request", "body": chunk, "more_body": remaining > 0}
-            await self.app(scope, bounded_receive, send)
+            return await reject(413, "Images must be 20 MB or smaller.")
+        if self.active >= self.max_uploads:
+            return await reject(429, "Upload slots are busy. Try again shortly.")
+        self.active += 1  # No await between admission and increment.
+        try:
+            with tempfile.SpooledTemporaryFile(max_size=1024 * 1024) as spool:
+                size = 0
+                try:
+                    async with asyncio.timeout(self.upload_timeout):
+                        while True:
+                            message = await receive()
+                            if message["type"] == "http.disconnect":
+                                return
+                            chunk = message.get("body", b"")
+                            size += len(chunk)
+                            if size > limit:
+                                return await reject(413, "Images must be 20 MB or smaller.")
+                            await run_in_threadpool(spool.write, chunk)
+                            if not message.get("more_body", False):
+                                break
+                except TimeoutError:
+                    return await reject(408, "Upload timed out. Try again.")
+                await run_in_threadpool(spool.seek, 0)
+                remaining = size
+                replayed = False
+                async def bounded_receive():
+                    nonlocal remaining, replayed
+                    if remaining <= 0:
+                        if not replayed:
+                            replayed = True
+                            return {"type": "http.request", "body": b"", "more_body": False}
+                        return await receive()
+                    replayed = True
+                    chunk = await run_in_threadpool(spool.read, 65536)
+                    remaining -= len(chunk)
+                    return {"type": "http.request", "body": chunk, "more_body": remaining > 0}
+                await self.app(scope, bounded_receive, send)
+        finally:
+            self.active -= 1
 
 
 @asynccontextmanager
@@ -94,45 +136,55 @@ async def lifespan(application):
 api_app = FastAPI()
 app = FastAPI(title="Paint-by-Numbers App", lifespan=lifespan)
 app.add_middleware(UploadLimitMiddleware)
+app.add_middleware(LocalRequestMiddleware)
+
+
+@api_app.get("/settings")
+def settings():
+    return {"schema_version": 2, "defaults": DEFAULTS, "ranges": RANGES, "presets": PRESETS}
 
 
 @api_app.get("/hardware-status")
 def hardware_status():
-    cv2.ocl.setUseOpenCL(True)
-    enabled = cv2.ocl.useOpenCL()
-    return {"has_hardware_acceleration": enabled,
-            "message": f"Bilateral filter OpenCL: {'available' if enabled else 'unavailable (CPU fallback)'}. Other processing uses CPU."}
+    return {"has_hardware_acceleration": False,
+            "message": "Portable CPU processing, up to two threads per job."}
 
 
 @api_app.post("/process/start", status_code=202)
 async def start_processing(
+    request: Request,
     file: UploadFile = File(...),
-    k: int = Form(..., ge=3, le=32),
-    resolution_factor: float = Form(1.0, ge=0.1, le=1.0),
-    bilateral_diameter: int = Form(..., ge=5, le=15),
-    sigma_color: int = Form(..., ge=25, le=150),
-    area_min: int = Form(..., ge=10, le=500),
-    stroke_width: int = Form(..., ge=1, le=4),
-    font_scale: float = Form(..., ge=0.5, le=2.0),
+    k: int = Form(..., ge=RANGES["k"][0], le=RANGES["k"][1]),
+    resolution_factor: float = Form(1.0, ge=RANGES["resolution_factor"][0], le=RANGES["resolution_factor"][1]),
+    bilateral_diameter: int = Form(..., ge=RANGES["bilateral_diameter"][0], le=RANGES["bilateral_diameter"][1]),
+    sigma_color: int = Form(..., ge=RANGES["sigma_color"][0], le=RANGES["sigma_color"][1]),
+    area_min: int = Form(..., ge=RANGES["area_min"][0], le=RANGES["area_min"][1]),
+    stroke_width: int = Form(..., ge=RANGES["stroke_width"][0], le=RANGES["stroke_width"][1]),
+    font_scale: float = Form(..., ge=RANGES["font_scale"][0], le=RANGES["font_scale"][1]),
     color_space: Literal["rgb", "lab"] = Form("lab"),
     # A bool Form treats an absent checkbox as False; preserve our API default.
     protect_eyes: Literal["true", "false"] = Form("true"),
+    canvas_width_cm: float = Form(0, ge=RANGES["canvas_width_cm"][0], le=RANGES["canvas_width_cm"][1]),
+    request_id: UUID | None = Form(None),
 ):
     params = dict(k=k, resolution_factor=resolution_factor, bilateral_diameter=bilateral_diameter,
                   sigma_color=sigma_color, area_min=area_min, stroke_width=stroke_width, font_scale=font_scale)
     if not all(math.isfinite(value) for value in params.values()):
         raise HTTPException(422, "Parameters must be finite numbers.")
-    params.update(color_space=color_space, protect_eyes=(protect_eyes == "true"))
+    if not math.isfinite(canvas_width_cm) or 0 < canvas_width_cm < 5:
+        raise HTTPException(422, "Canvas width must be 0 (A4 fit) or 5-200 cm.")
+    form = await request.form()
+    allowed = set(params) | {"file", "color_space", "protect_eyes", "canvas_width_cm", "request_id"}
+    if set(form) - allowed:
+        raise HTTPException(422, "Unknown processing option.")
+    params.update(color_space=color_space, protect_eyes=(protect_eyes == "true"), canvas_width_cm=canvas_width_cm)
     try:
         async with api_app.state.upload_lock:
             data = await file.read(MAX_UPLOAD_BYTES + 1)
             if len(data) > MAX_UPLOAD_BYTES:
                 raise HTTPException(413, "Images must be 20 MB or smaller.")
-            normalized = await run_in_threadpool(normalize_image, data, params)
-            job_id = await run_in_threadpool(api_app.state.jobs.start, normalized, params)
+            job_id = await run_in_threadpool(api_app.state.jobs.start, data, params, str(request_id) if request_id else None)
         return {"job_id": job_id}
-    except InvalidImage as exc:
-        raise HTTPException(422, str(exc)) from exc
     except JobCapacityError as exc:
         raise HTTPException(429, str(exc), headers={"Retry-After": "2"}) from exc
     finally:
@@ -159,12 +211,22 @@ def stop_processing(job_id: UUID):
         raise HTTPException(404, "Job not found or expired.") from exc
 
 
+@api_app.post("/process/cancel/{request_id}")
+def cancel_request(request_id: UUID):
+    try:
+        return api_app.state.jobs.cancel_request(str(request_id))
+    except JobCapacityError as exc:
+        raise HTTPException(429, str(exc)) from exc
+
+
 @api_app.get("/process/export/{job_id}/{kind}.{format_}")
 def export_result(job_id: UUID, kind: Literal["template", "palette"], format_: Literal["png", "pdf"]):
-    state = snapshot(job_id)
-    if state["status"] != "Complete":
-        raise HTTPException(409, "This job has no completed result to export.")
-    data = make_export(state["result"], kind, format_)
+    try:
+        data = api_app.state.jobs.export(str(job_id), kind, format_)
+    except JobNotFound as exc:
+        raise HTTPException(404, "Job not found or expired. Process the image again.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     return Response(data, media_type="application/pdf" if format_ == "pdf" else "image/png",
                     headers={"Content-Disposition": f'attachment; filename="{kind}.{format_}"',
                              "Cache-Control": "no-store"})

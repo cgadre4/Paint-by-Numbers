@@ -1,7 +1,5 @@
 import base64
 import io
-import json
-import time
 import uuid
 from types import SimpleNamespace
 
@@ -23,7 +21,7 @@ from tests.workers import waiting_worker, crashing_worker, error_worker
 
 @pytest.fixture(scope='module')
 def client():
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://127.0.0.1") as client:
         yield client
 
 
@@ -81,7 +79,8 @@ def test_processing_contract_and_all_exports(client, params, k, factor):
 @pytest.mark.parametrize('field,value', [('k', 2), ('k', 33), ('k', 'abc'), ('k', 3.5),
     ('resolution_factor', 0), ('resolution_factor', 'nan'), ('font_scale', 'inf'),
     ('bilateral_diameter', 16), ('sigma_color', 0), ('area_min', 0), ('stroke_width', 5),
-    ('color_space', 'unknown'), ('protect_eyes', 'perhaps')])
+    ('color_space', 'unknown'), ('protect_eyes', 'perhaps'), ('canvas_width_cm', 'inf'),
+    ('canvas_width_cm', -1), ('canvas_width_cm', 201), ('canvas_width_cm', 4.9), ('request_id', 'invalid'), ('unknown', 'value')])
 def test_invalid_parameters_do_not_create_jobs(client, params, field, value):
     params[field] = value
     before = set(app.state.jobs.jobs)
@@ -92,15 +91,19 @@ def test_invalid_parameters_do_not_create_jobs(client, params, field, value):
 @pytest.mark.parametrize('data', [b'', b'not an image', b'\x89PNG\r\n\x1a\ntruncated'])
 def test_invalid_upload(client, params, data):
     response = submit(client, params, data)
-    assert response.status_code == 422
-    assert isinstance(response.json()['detail'], str)
+    assert response.status_code == 202
+    state = wait_for(lambda: client.get(f"/api/process/status/{response.json()['job_id']}").json(), lambda value: value['status'] == 'Error')
+    assert state['error_code'] == 'invalid_image'
 
 
 def test_missing_field_and_tiny_input(client, params):
     del params['k']
     assert submit(client, params).status_code == 422
     params['k'] = 32
-    assert submit(client, params, sample_image(2, 2)).status_code == 422
+    response = submit(client, params, sample_image(2, 2))
+    assert response.status_code == 202
+    state = wait_for(lambda: client.get(f"/api/process/status/{response.json()['job_id']}").json(), lambda value: value['status'] == 'Error')
+    assert state['error_code'] == 'invalid_image'
 
 
 def test_upload_size_limit(client, params):
@@ -175,7 +178,6 @@ def test_stop_timeout_expiry_capacity_and_shutdown(tmp_path, params):
     manager = JobManager(root=tmp_path, worker=waiting_worker, max_active=1)
     try:
         job_id = manager.start(sample_image(), params)
-        process = manager.jobs[job_id].process
         with pytest.raises(JobCapacityError):
             manager.start(sample_image(), params)
         assert manager.stop(job_id)['status'] == 'Stopped'

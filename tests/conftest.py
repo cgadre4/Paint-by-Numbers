@@ -1,13 +1,12 @@
 import io
 import time
-from pathlib import Path
 
 import numpy as np
 import pytest
 from PIL import Image
 
 DEFAULTS = dict(k=8, resolution_factor=1, bilateral_diameter=7, sigma_color=75,
-                area_min=50, stroke_width=2, font_scale=1, color_space="lab", protect_eyes=True)
+                area_min=50, stroke_width=2, font_scale=1, color_space="lab", protect_eyes=True, canvas_width_cm=0)
 
 
 def sample_image(width=256, height=160):

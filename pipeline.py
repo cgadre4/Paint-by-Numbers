@@ -2,12 +2,16 @@
 import base64
 import io
 import json
+import math
+import logging
+import os
+import time
 import warnings
 from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageCms, ImageOps, UnidentifiedImageError
 
 from regions import cleanup_regions, label_dimensions, label_glyph
 from facial import detect_eyes, eye_mask, preserve_eye_pixels
@@ -22,7 +26,12 @@ class InvalidImage(ValueError):
     pass
 
 
-def normalize_image(data: bytes, params: dict) -> bytes:
+def scaled_dimensions(width, height, factor):
+    """Round positive dimensions half up, matching the browser's Math.round."""
+    return math.floor(width * factor + 0.5), math.floor(height * factor + 0.5)
+
+
+def decode_image(data: bytes, params: dict, *, resize=False):
     if not data:
         raise InvalidImage("The image is empty.")
     if len(data) > MAX_UPLOAD_BYTES:
@@ -30,7 +39,7 @@ def normalize_image(data: bytes, params: dict) -> bytes:
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
-            with Image.open(io.BytesIO(data)) as image:
+            with Image.open(io.BytesIO(data), formats=list(SUPPORTED_FORMATS)) as image:
                 if image.format not in SUPPORTED_FORMATS:
                     raise InvalidImage("Use a PNG, JPEG, WebP, or BMP image.")
                 if getattr(image, "n_frames", 1) != 1:
@@ -38,24 +47,44 @@ def normalize_image(data: bytes, params: dict) -> bytes:
                 width, height = image.size
                 if width * height > MAX_INPUT_PIXELS:
                     raise InvalidImage("The source image must contain at most 40 million pixels.")
-                scaled = (round(width * params["resolution_factor"]),
-                          round(height * params["resolution_factor"]))
+                scaled = scaled_dimensions(width, height, params["resolution_factor"])
                 if min(scaled) < 1 or scaled[0] * scaled[1] < params["k"]:
                     raise InvalidImage("The image is too small for this resolution and number of colors.")
                 if scaled[0] * scaled[1] > MAX_PROCESS_PIXELS:
                     raise InvalidImage("Reduce Resolution Factor: processing is limited to 4 million pixels.")
                 image.load()
-                rgba = ImageOps.exif_transpose(image).convert("RGBA")
-                rgb = Image.new("RGBA", rgba.size, "white")
-                rgb.alpha_composite(rgba)
-                output = io.BytesIO()
-                rgb.convert("RGB").save(output, format="PNG")
-                return output.getvalue()
+                oriented = ImageOps.exif_transpose(image)
+                if resize and params["resolution_factor"] < 1:
+                    if oriented.mode in {"P", "1"}:
+                        oriented = oriented.convert("RGBA")
+                    oriented = oriented.resize(scaled_dimensions(*oriented.size, params["resolution_factor"]), Image.Resampling.BOX)
+                alpha = oriented.convert("RGBA").getchannel("A")
+                profile = image.info.get("icc_profile")
+                if profile:
+                    try:
+                        source = ImageCms.ImageCmsProfile(io.BytesIO(profile))
+                        mode = "CMYK" if oriented.mode == "CMYK" else "RGB"
+                        rgb = ImageCms.profileToProfile(oriented.convert(mode), source,
+                                                       ImageCms.createProfile("sRGB"), outputMode="RGB")
+                    except (ImageCms.PyCMSError, OSError, ValueError) as exc:
+                        raise InvalidImage("The embedded color profile is invalid. Export the image as sRGB and retry.") from exc
+                else:
+                    rgb = oriented.convert("RGB")
+                white = Image.new("RGB", rgb.size, "white")
+                white.paste(rgb, mask=alpha)
+                return white
     except InvalidImage:
         raise
     except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError,
             Image.DecompressionBombWarning) as exc:
         raise InvalidImage("The file is not a readable image, or its dimensions are too large.") from exc
+
+
+def normalize_image(data: bytes, params: dict) -> bytes:
+    """Compatibility helper for benchmarks; workers decode directly to pixels."""
+    output = io.BytesIO()
+    decode_image(data, params).save(output, format="PNG")
+    return output.getvalue()
 
 
 def img_to_base64(image: np.ndarray) -> str:
@@ -95,7 +124,7 @@ def quantize_image(image, k, seed=None, color_space="rgb"):
     return flat_labels.reshape(image.shape[:2]), centers
 
 
-def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=None):
+def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=None, missing_mask=None):
     """Keep every boundary and only draw numbers whose complete box fits inside."""
     height, width = labels.shape
     template = np.full((height, width, 3), 255, np.uint8)
@@ -103,12 +132,13 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=
         raise ValueError("Detail mask must match the label map.")
     if detail_mask is not None:
         detail_mask = np.asarray(detail_mask, dtype=bool)
+    protected = detail_mask is not None and detail_mask.any()
     placements = []
     unlabelled = 0
     for color_idx in range(k):
         mask = (labels == color_idx).astype(np.uint8)
         contours, _ = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-        if detail_mask is None or not detail_mask.any() or stroke_width == 1:
+        if not protected or stroke_width == 1:
             cv2.drawContours(template, contours, -1, (0, 0, 0), stroke_width)
         else:
             # A thick outline can black out the very details protected in the map.
@@ -122,7 +152,7 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=
         for component in range(1, count):
             x, y, w, h, _ = stats[component]
             region = (components[y:y+h, x:x+w] == component).astype(np.uint8)
-            distance = cv2.distanceTransform(np.pad(region, 1), cv2.DIST_L2, 5)[1:-1, 1:-1]
+            distance = None
             number_region = region.copy()
             if detail_mask is not None:
                 number_region[detail_mask[y:y+h, x:x+w]] = 0
@@ -135,6 +165,8 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=
                                  borderType=cv2.BORDER_CONSTANT, borderValue=0)
                 if not fits.any():
                     continue
+                if distance is None:
+                    distance = cv2.distanceTransform(np.pad(region, 1), cv2.DIST_L2, 5)[1:-1, 1:-1]
                 cy, cx = np.unravel_index(np.argmax(distance * fits), region.shape)
                 left, top = int(x + cx - bw // 2), int(y + cy - bh // 2)
                 glyph = label_glyph(color_idx, float(scale))
@@ -147,38 +179,54 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=
                 break
             if not found:
                 unlabelled += 1
+                if missing_mask is not None:
+                    missing_mask[y:y+h, x:x+w][region.astype(bool)] = 255
     return template, placements, unlabelled
 
 
 def process_job_worker(job_id, shared_state, directory, params):
     root = Path(directory)
+    timings = {}
+    previous, stage = time.perf_counter(), None
     def progress(message, value):
-        shared_state[job_id] = {"status": message, "progress": value}
+        nonlocal previous, stage
+        now = time.perf_counter()
+        if stage:
+            timings[stage] = round(now - previous, 4)
+        previous, stage = now, message
+        shared_state[job_id] = {"status": message, "progress": value, "schema_version": 2}
     try:
         # Avoid every concurrent worker consuming all CPU threads.
-        cv2.setNumThreads(2)
-        cv2.ocl.setUseOpenCL(True)
+        cv2.setNumThreads(max(1, min(2, (os.cpu_count() or 2) // 2)))
+        cv2.ocl.setUseOpenCL(False)
         progress("Reading image", 5)
-        image = cv2.imdecode(np.frombuffer((root / "input.png").read_bytes(), np.uint8), cv2.IMREAD_COLOR)
-        if image is None:
-            raise ValueError("Could not decode the uploaded image.")
-        factor = params["resolution_factor"]
-        if factor < 1:
-            progress("Scaling image", 10)
-            image = cv2.resize(image, (round(image.shape[1] * factor), round(image.shape[0] * factor)),
-                               interpolation=cv2.INTER_AREA)
         enabled = params.get("protect_eyes", True)
-        boxes, face_count = [], 0
-        if enabled:
-            progress("Locating eyes", 15)
-            boxes, face_count = detect_eyes(image)
-        protection = eye_mask(image.shape, boxes)
-        progress("Applying bilateral filter", 20)
-        smoothed = bilateral_filter(image, params["bilateral_diameter"], params["sigma_color"], params["sigma_color"])
-        smoothed = preserve_eye_pixels(image, smoothed, protection)
-        space = params.get("color_space", "lab")
-        progress("Clustering perceptual colors" if space == "lab" else "Clustering RGB colors", 40)
-        raw_labels, centers = quantize_image(smoothed, params["k"], color_space=space)
+        cache = root / "clusters.npz"
+        reused = cache.exists()
+        if reused:
+            progress("Reusing color analysis", 40)
+            with np.load(cache, allow_pickle=False) as saved:
+                raw_labels, centers, protection = saved["labels"], saved["centers"], saved["protection"]
+                boxes, face_count = saved["boxes"].tolist(), int(saved["face_count"])
+        else:
+            image = cv2.cvtColor(np.asarray(decode_image((root / "input.png").read_bytes(), params, resize=True)), cv2.COLOR_RGB2BGR)
+            enabled = params.get("protect_eyes", True)
+            boxes, face_count = [], 0
+            if enabled:
+                progress("Locating eyes", 15)
+                boxes, face_count = detect_eyes(image)
+            protection = eye_mask(image.shape, boxes)
+            progress("Applying bilateral filter", 20)
+            smoothed = bilateral_filter(image, params["bilateral_diameter"], params["sigma_color"], params["sigma_color"])
+            smoothed = preserve_eye_pixels(image, smoothed, protection)
+            space = params.get("color_space", "lab")
+            progress("Clustering perceptual colors" if space == "lab" else "Clustering RGB colors", 40)
+            raw_labels, centers = quantize_image(smoothed, params["k"], color_space=space)
+            pending_cache = root / "clusters.tmp"
+            with pending_cache.open("wb") as stream:
+                np.savez(stream, labels=raw_labels, centers=centers, protection=protection,
+                         boxes=np.asarray(boxes, dtype=np.int32).reshape(-1, 4), face_count=face_count)
+            pending_cache.replace(cache)
         progress("Cleaning up small regions", 60)
         labels = cleanup_regions(raw_labels, params["k"], params["area_min"],
                                  centers, params["stroke_width"], params["font_scale"], protection)
@@ -187,27 +235,41 @@ def process_job_worker(job_id, shared_state, directory, params):
         palette = [{"id": i + 1, "hex": "#{:02x}{:02x}{:02x}".format(*map(int, color)),
                     "rgb": list(map(int, color))} for i, color in enumerate(centers[:, ::-1])]
         progress("Generating printable template", 90)
+        missing_mask = np.zeros(labels.shape, np.uint8)
         template, placements, missing = extract_contours_and_label(
-            labels, params["k"], params["stroke_width"], params["font_scale"], protection)
+            labels, params["k"], params["stroke_width"], params["font_scale"], protection, missing_mask)
         notices = []
         if missing:
             reason = " outside protected eye detail" if boxes else ""
-            notices.append(f"{missing} region(s) could not fit a readable number{reason}. Try a smaller font or fewer colors; review fine details before painting.")
+            notices.append(f"{missing} region(s) could not fit a readable number{reason}. Try fewer colors; review fine details against the color preview before painting.")
         if enabled and not boxes:
             notices.append("No human eyes were detected; eye protection was not applied. Review small, angled, or obscured faces.")
         elif boxes:
             notices.append(f"Protected {len(boxes)} detected eye area(s), using thin outlines and keeping numbers outside them. Fine eye regions may remain unnumbered.")
+        from canvas_size import canvas_metadata
+        physical = canvas_metadata(labels.shape[1], labels.shape[0], params, placements)
+        notices.extend(physical.pop("warnings"))
+        progress("Encoding result", 95)
         result = {"processed_image": img_to_base64(preview), "template_image": img_to_base64(template),
                   "label_map": img_to_base64(labels.astype(np.uint8)), "palette": palette,
-                  "image_dimensions": {"width": image.shape[1], "height": image.shape[0]},
+                  "image_dimensions": {"width": labels.shape[1], "height": labels.shape[0]},
                   "parameters": params, "label_placements": placements,
                   "eye_protection": {"enabled": enabled, "detected_faces": face_count, "boxes": boxes},
-                  "warnings": notices}
+                  "warnings": notices, "canvas": physical,
+                  "missing_regions": {"count": missing, "area_percent": round(100 * np.count_nonzero(missing_mask) / missing_mask.size, 3),
+                                      "mask": img_to_base64(missing_mask)},
+                  "diagnostics": {"backend": "CPU", "threads": cv2.getNumThreads(), "reused_color_analysis": reused, "stages_seconds": timings},
+                  "schema_version": 2}
         pending = root / "result.tmp"
         pending.write_text(json.dumps(result), encoding="utf-8")
         pending.replace(root / "result.json")
         progress("Complete", 100)
     except Exception as exc:
-        shared_state[job_id] = {"status": "Error", "progress": 0, "error": str(exc)}
+        logging.getLogger(__name__).exception("Processing failed for job %s", job_id)
+        shared_state[job_id] = {"status": "Error", "progress": 0, "error": str(exc) if isinstance(exc, (InvalidImage, ValueError)) else f"Processing failed. See the local server log for job {job_id}.",
+                                "error_code": "invalid_image" if isinstance(exc, InvalidImage) else "processing_failed", "schema_version": 2}
     finally:
-        (root / "input.png").unlink(missing_ok=True)
+        try:
+            (root / "input.png").unlink(missing_ok=True)
+        except OSError:
+            logging.getLogger(__name__).warning("Input cleanup deferred to parent for job %s", job_id)

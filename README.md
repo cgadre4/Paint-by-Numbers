@@ -6,7 +6,7 @@ A local web app that turns a still image into a limited-color preview, a numbere
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then double-click `run.bat`. It installs the locked dependencies, starts the local server, and opens `http://127.0.0.1:8000`. Close the server with Ctrl+C so active jobs and temporary files are cleaned up.
 
-The launcher stores its environment in `%LOCALAPPDATA%\PaintByNumbers\venv`, keeping executable dependencies off synced/network project drives. Set `UV_PROJECT_ENVIRONMENT` before launching to choose another location.
+The launcher stores its environment in `%LOCALAPPDATA%\PaintByNumbers\venv-1.2`, keeping executable dependencies off synced/network project drives. Set `UV_PROJECT_ENVIRONMENT` before launching to choose another location.
 
 ## Run from a terminal
 
@@ -20,7 +20,7 @@ uv run --locked python server.py
 On Windows, when working from a synced drive, set this first in PowerShell:
 
 ```powershell
-$env:UV_PROJECT_ENVIRONMENT = Join-Path $env:LOCALAPPDATA 'PaintByNumbers\venv'
+$env:UV_PROJECT_ENVIRONMENT = Join-Path $env:LOCALAPPDATA 'PaintByNumbers\venv-1.2'
 ```
 
 For development without opening a browser:
@@ -34,9 +34,9 @@ Use one server worker. Jobs are owned by that process; multi-worker deployment i
 ## Workflow
 
 1. Browse or drop a PNG, JPEG, WebP, or BMP still image.
-2. Choose the number of paints, resolution, smoothing, region size, and label settings. **Perceptual (Lab)** color matching and **Protect detected human eyes** are enabled by default; **Classic (RGB)** remains available.
+2. Choose **Simple** (8 paints, stronger simplification) or **Detailed** (24 paints, gentler smoothing), then optionally set canvas width in centimetres. Height follows the image proportions. Open **Advanced settings** to adjust individual controls. **Perceptual (Lab)** color matching and **Protect detected human eyes** are enabled by default; **Classic (RGB)** remains available.
 3. Select **Process Image** (or Ctrl/Cmd+Enter). **Stop** cancels processing. Reset and new uploads invalidate earlier results.
-4. Click a palette number to highlight its regions; click again to clear it. Wheel/slider zoom and drag-to-pan affect all three canvases.
+4. Click a palette number to highlight its regions; click again to clear it. Wheel/slider zoom and drag-to-pan affect all three canvases. Arrow buttons or focused-canvas arrow keys pan; +/- zoom and Home resets. Use **Show** to switch views and enable the protected-eye or unnumbered-region overlays for review.
 5. Download template and palette as PNG or PDF. **Print Ready View** isolates the template; browser printing uses the clean template without highlighting or viewport transforms.
 
 For portraits, start with 16-32 colors. Eye protection runs locally using bundled frontal-face/eye detectors. It uses gentler smoothing in detected eyes, preserves their palette regions during cleanup, draws thin eye outlines, and keeps numbers outside the eye boxes. Tiny eye details may need painting from the color preview without numbers. Detection can miss small, angled, or obscured faces and does not target animal eyes; review the output and detection notice.
@@ -46,14 +46,14 @@ Changing processing settings invalidates the current result. Processing is expli
 ## Output and limits
 
 - Maximum upload: **20 MiB**; source: **40 million pixels**; processed image: **4 million pixels**. Lower Resolution Factor for large source images.
-- Animated and unsupported images receive a clear validation error. EXIF orientation is normalized and transparency is composited onto white.
-- Two jobs can run concurrently. Processing times out after five minutes.
+- Animated and unsupported images receive a clear validation error. EXIF orientation is normalized, embedded ICC profiles are converted to sRGB, and transparency is composited onto white. Invalid profiles are rejected with an actionable message. Decoding runs in the owned worker; its errors appear in job status.
+- Two bounded uploads and two jobs can run concurrently. Uploads have a 30-second body deadline. Processing times out after five minutes.
 - Finished jobs expire after 15 minutes; at most eight finished jobs are retained. Download results before they expire. Temporary data is removed on expiry and normal shutdown.
-- Template PDF fits a raster template on one A4 page (landscape for wide images), with 10 mm margins. It is not a vector PDF. Palette PDF includes all colors, numbers, hex values, and RGB values.
+- With canvas width blank, template PDF fits a raster template on one A4 page (landscape for wide images), with 10 mm margins. A width of 5-200 cm produces a PDF page at that exact canvas width, with proportional height (maximum 200 cm) and no added margins. Print custom PDFs at **100% / actual size**; printer Fit-to-page changes their dimensions. Large pages require a suitable printer or external tiling software. PNG exports retain processed pixel dimensions; browser printing remains an A4 convenience view. It is not a vector PDF. Palette PDF includes all colors, numbers, hex values, and RGB values.
 - Except for protected eye regions, small regions merge only into edge-adjacent regions, using color similarity and shared boundary length. Small unnumberable regions receive additional conservative cleanup; stronger contrasts and large thin features are preserved.
-- Numbers are placed only when their complete bounding box fits inside a region. If some regions cannot fit a number, the app reports how many. Physical canvas sizing, advanced simplification, and manual region editing are future work.
+- Numbers are placed only when their complete bounding box fits inside a region. If some regions cannot fit a number, the app reports how many. Canvas size changes export scale and readability warnings, not clustering or cleanup thresholds in this release. Enlargement cannot recover lost detail. The app reports effective pixel density, outline width and minimum number height; numbers under 2 mm or custom output below 150 ppi trigger review warnings. These are advisory thresholds, not a guarantee of paintability. Vector export, automatic tiling, advanced simplification and manual region editing remain future work.
 - Color matching uses OpenCV K-means in float CIELab by default, or RGB when selected. K-means is randomized. Exact palette order and pixel output can vary between runs.
-- OpenCL is attempted for bilateral filtering with CPU fallback. K-means and region work currently use the CPU.
+- The application uses portable CPU processing, with at most two OpenCV threads per worker. An optional OpenCL helper remains tested for experiments but is not enabled by the application. Immutable color analysis is reused within retained jobs when only cleanup, label, outline or canvas settings change. Exports are cached for the job lifetime.
 
 ## Tests
 
@@ -65,7 +65,7 @@ uv run --locked python -m pytest -q
 
 On Linux, install Chromium system dependencies with `python -m playwright install --with-deps chromium` instead. On Windows, the browser tests use installed Chrome when available; `PBN_BROWSER_CHANNEL` can select another installed Playwright channel.
 
-`./test.ps1` runs the suite on Windows using the local cached environment. Backend-only checks:
+`./test.ps1` uses an installed Node executable for Playwright when available and runs the suite on Windows using the local cached environment. Backend-only checks:
 
 ```sh
 uv run --locked python -m pytest tests/test_core.py -q
@@ -88,7 +88,7 @@ The historical cleanup benchmarks retain RGB quantization for comparable results
 
 ## API options
 
-Alongside the existing numeric fields, `POST /api/process/start` accepts multipart `color_space` (`lab` or `rgb`, default `lab`) and `protect_eyes` (`true` or `false`, default `true`). Results include these settings and `eye_protection` with `enabled`, `detected_faces`, and `boxes` as `[x, y, width, height]` in processed-image pixels. Detection metadata describes locations, not identities.
+The browser-only API is now schema version 2. `GET /api/settings` supplies presets, defaults and ranges. Start accepts an optional UUID `request_id`; repeating a retained request ID returns that job, and `POST /api/process/cancel/{request_id}` safely cancels even before start arrives. Cancellation tombstones are bounded and expire after 15 minutes. Invalid numeric fields return 422; valid uploads return 202 before image decoding, and invalid images subsequently produce an Error snapshot with `error_code`. Unknown options are rejected. Hosts must be loopback, and browser mutations must come from the same origin. Alongside the existing numeric fields, `POST /api/process/start` accepts multipart `color_space` (`lab` or `rgb`, default `lab`) and `protect_eyes` (`true` or `false`, default `true`). Results include these settings and `eye_protection` with `enabled`, `detected_faces`, and `boxes` as `[x, y, width, height]` in processed-image pixels. Detection metadata describes locations, not identities. Optional `canvas_width_cm` is 0 for A4 fit or 5-200 for custom size. Results add `canvas`, `missing_regions` (count, pixel coverage and exact mask), stage timings and CPU/cache diagnostics. Color analysis and export caches remain private and expire with their jobs.
 
 ## Code map
 
@@ -98,9 +98,18 @@ Alongside the existing numeric fields, `POST /api/process/start` accepts multipa
 - `facial.py`: bounded local human-eye detection and gentle eye filtering.
 - `regions.py`: edge-adjacent, color-aware region merging and shared label-fit geometry.
 - `benchmarks/`: synthetic and downloaded-photo benchmarks, pinned source credits, paired measurements, and visual comparisons.
-- `exports.py`: clean template/palette downloads and A4 PDF layout.
+- `exports.py`, `canvas_size.py`: clean template/palette downloads, A4 and physical canvas geometry.
+- `settings.py`: shared presets, defaults and numeric ranges.
 - `static/`: vanilla HTML/CSS/JavaScript interface, with no npm build step.
 - `tests/`: pytest API/lifecycle tests and Playwright browser tests.
 - `AGENTS.md`: contributor/agent working rules.
 
 `mission_briefing.md` describes the original goals. Earlier sections of `status_log.md` and `updates.md` are historical and may describe behavior that has since changed. This README and the current source describe the shipped implementation.
+
+## Troubleshooting and release validation
+
+Keep Windows Application Control enabled. A corrupted or blocked old environment is not repaired by copying or renaming executables. Version 1.2 launchers use a fresh local `venv-1.2` directory; an explicit `UV_PROJECT_ENVIRONMENT` override is still respected. If startup fails, inspect the reported error and use an installed, permitted Python/Node runtime. Never weaken operating-system security. The prior environment is left untouched.
+
+CI tests Python 3.12 and 3.13 on Linux and Windows, runs scoped Ruff checks and audits the locked runtime/development dependencies. macOS and non-Chromium browsers are not yet verified release targets. No frontend build step or cloud service is required.
+
+Job latency and sampled process-tree memory can be measured with `uv run --locked python -m benchmarks.jobs` (cached photos required). These are diagnostic measurements, not CI timing thresholds. The sampled-clustering experiment is benchmark-only: `uv run --locked python -m benchmarks.cpu`. It compares a 65,536-pixel sample with full Lab K-means using identical source/filter/protection settings and three timing repeats. See [1.2 release evaluation](benchmarks/RELEASE_1_2_RESULTS.md) for the selection decision and limitations. Existing historical benchmark references remain frozen.

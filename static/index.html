@@ -25,7 +25,19 @@
             </section>
 
             <section class="parameters-section">
-                <h2>Parameters</h2>
+                <h2>Painting settings</h2>
+                <div class="control-group">
+                    <label for="preset">Painting style</label>
+                    <select id="preset"><option value="simple">Simple — fewer colors, larger regions</option><option value="detailed">Detailed — more colors, finer regions</option><option value="custom">Custom settings</option></select>
+                    <p class="control-help">Both presets protect detected eyes. Detailed designs take more time to paint.</p>
+                </div>
+                <div class="control-group">
+                    <label for="canvasWidth">Canvas width (cm, optional)</label>
+                    <input id="canvasWidth" type="number" min="5" max="200" step="0.1" placeholder="Auto: fit A4" aria-describedby="canvasHelp">
+                    <p id="canvasHelp" class="control-help">Height follows the image proportions. Custom PDF uses this exact size; print at 100%. No multi-page tiling. PNG keeps its pixel dimensions.</p>
+                    <p id="canvasInfo" class="control-help"></p>
+                </div>
+                <details id="advancedSettings"><summary>Advanced settings</summary>
 
                 <div class="control-group">
                     <label for="colorSpace">Color matching</label>
@@ -74,6 +86,7 @@
                     <label for="fontScale">Number Font Scale: <span class="badge" id="fontBadge">1.0</span></label>
                     <input type="range" id="fontScale" min="0.5" max="2.0" value="1.0" step="0.1">
                 </div>
+                </details>
             </section>
 
             <section class="actions-section">
@@ -131,7 +144,12 @@
                 </div>
             </header>
 
-            <div class="canvas-container">
+            <div class="view-options">
+                <label for="viewChoice">Show</label><select id="viewChoice"><option value="all">Compare all</option><option value="source">Source</option><option value="quantized">Colors</option><option value="template">Template</option></select>
+                <label for="showEyes"><input id="showEyes" type="checkbox"> Protected eyes</label>
+                <label for="showMissing"><input id="showMissing" type="checkbox"> Unnumbered regions</label>
+            </div>
+            <div class="canvas-container" data-view="all">
                 <!-- Canvas 1: Source Image -->
                 <section class="canvas-viewer source-viewer">
                     <div class="canvas-wrapper">
@@ -173,6 +191,10 @@
                     <input type="range" id="zoomSlider" min="25" max="300" value="100" step="5">
                 </div>
 
+                <div class="pan-buttons" aria-label="Pan image">
+                    <button class="btn-small" data-pan="-30,0" aria-label="Pan left">←</button><button class="btn-small" data-pan="30,0" aria-label="Pan right">→</button>
+                    <button class="btn-small" data-pan="0,-30" aria-label="Pan up">↑</button><button class="btn-small" data-pan="0,30" aria-label="Pan down">↓</button>
+                </div>
                 <button id="resetTransformBtn" class="btn-small">Reset View</button>
             </footer>
         </main>

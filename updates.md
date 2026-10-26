@@ -132,3 +132,20 @@ Any subsequent bug fixes, enhancements, or feature additions will be logged here
 - Retain detected eye components during cleanup, use mild eye filtering and thin outlines, and keep labels outside eye boxes. Report detection metadata and unnumbered fine detail explicitly.
 - Added a frozen 6b657ba reference, evaluation-only facial annotations, four-way photo comparisons, and FACIAL_RESULTS.md. Across 36 cases, human-eye color error improved 40.5% and edge F1 rose 16.8 points, with 24.0% more unnumbered regions; six additional size/seed cases supported the direction.
 - All 87 local tests passed (including 9 browser workflows), plus historical benchmarks and real portrait/export visual checks. No cloud upload or new dependency. Remote CI is verified separately for the pushed commit.
+
+
+## 2026-10-26 - Full audit and proposed implementation plan
+- Completed a source, dependency, runtime, performance and UI/UX audit of revision 92817c4. Recorded 17 bugs/engineering defects (including a local launcher environment blocker) and 16 improvement proposals in [updates-2026-10-26.md](updates-2026-10-26.md).
+- Revalidated all 87 tests using the permitted installed Python 3.12 interpreter and existing locked project packages; the normal cached venv launcher was blocked by Windows Application Control. JavaScript syntax passed. Added ignored audit-only fault/network/browser probes and representative CPU/OpenCL timings.
+- Confirmed lost-start orphan jobs, cleanup failure propagation, reset canvas memory retention, dimension-rounding mismatch and missing Host/Origin enforcement. Dependency audit reported 37 Pillow advisories; assessed selected reachable codec paths and documented a patched-upgrade plan without claiming every advisory affects this app.
+- Proposed phases cover trust/input and ownership fixes, color/accessibility correctness, measured optimization, painting UX, print/edit/save features, broader segmentation evaluation and release hardening. Defined evidence, exit gates and decisions to discuss.
+- Implementation, dependency changes, commits, pushes and new CI runs are intentionally pending the user's explicit “execute” instruction. No fixes are claimed by this audit entry.
+
+- Planning decisions confirmed: portable CPU performance first; separate Simple and Detailed presets. Deferred new GPU backends from the first-release gate. Implementation and publishing remain pending “execute.”
+
+
+## 2026-10-26 — Version 1.2 smaller browser release
+
+Implemented the approved scope from updates-2026-10-26.md: worker-owned validation, upload admission/deadlines, local request trust, cancellation-before-start identity, robust job cleanup and capacity release; Pillow 13, ICC conversion and consistent dimensions; shared presets, physical-size PDFs/readability warnings, accessible responsive viewing, missing/eye overlays and buffer release; immutable color-analysis and export caching; versioned benchmark caches, scoped lint/security gates and expanded CI.
+
+Final local suite: 113 passed, plus three real-photo browser workflows. Lint/JS syntax and locked dependency audit passed. Synthetic/photo/facial benchmarks retained the existing quality results and zero protected-pixel recoloring. Sampled fitting was faster but remains benchmark-only because of detail regressions. The final 18-case worker-load benchmark passed after fixing a completion/capacity race. Exact measurements, visual checks, physical sizing constraints and remaining work are in benchmarks/RELEASE_1_2_RESULTS.md and the dated audit. Remote CI status is reported only after the final pushed main SHA completes.

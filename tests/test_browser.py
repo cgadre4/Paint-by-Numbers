@@ -2,12 +2,9 @@ import io
 import json
 import os
 import socket
-import subprocess
-import sys
 import time
 from pathlib import Path
 
-import httpx
 import pytest
 from PIL import Image
 from playwright.sync_api import sync_playwright, expect
@@ -76,6 +73,8 @@ def upload(page, data=None, name='sample.png'):
 
 
 def set_slider(page, name, value):
+    if name != '#zoomSlider' and not page.locator('#advancedSettings').evaluate('(e) => e.open'):
+        page.locator('#advancedSettings summary').click()
     page.locator(name).fill(str(value))
 
 
@@ -150,7 +149,7 @@ def test_reset_restores_submitted_defaults_and_new_upload_hides_results(page):
     expect(page.locator('#kSlider')).to_have_value('8')
     expect(page.locator('#resolutionFactor')).to_have_value('1')
     upload(page)
-    with page.expect_request('**/api/process/start') as request:
+    with page.expect_request('**/api/process/start'):
         complete(page)
     job_id = page.locator('#downloadTemplatePNG').get_attribute('href').split('/')[-2]
     result = page.request.get(f'/api/process/status/{job_id}').json()['result']
@@ -186,7 +185,7 @@ def test_cancel_pending_start_stops_returned_job_and_can_restart(page):
         page.locator('#resetBtn').click()
         route.fulfill(response=response)
     page.route('**/api/process/start', delayed_start, times=1)
-    with page.expect_request('**/api/process/stop/*'):
+    with page.expect_request('**/api/process/cancel/*'):
         page.locator('#processBtn').click()
     expect(page.locator('#resultsContainer')).to_be_hidden()
     expect(page.locator('#processBtn')).to_be_disabled()
@@ -216,7 +215,7 @@ def test_stop_running_job_then_process_again(page):
     upload(page, sample_image(1200, 800))
     with page.expect_response('**/api/process/start'):
         page.locator('#processBtn').click()
-    with page.expect_request('**/api/process/stop/*'):
+    with page.expect_request('**/api/process/cancel/*'):
         page.locator('#stopBtn').click()
     expect(page.locator('#stopBtn')).to_be_hidden()
     expect(page.locator('#resultsContainer')).to_be_hidden()
@@ -254,6 +253,7 @@ def test_color_and_eye_controls_submit_invalidate_and_reset(page):
     expect(page.locator('#colorSpace')).to_have_value('lab')
     expect(page.locator('#protectEyes')).to_be_checked()
     upload(page)
+    page.locator('#advancedSettings summary').click()
     page.locator('#colorSpace').select_option('rgb')
     page.locator('#protectEyes').uncheck()
     complete(page)
@@ -270,3 +270,53 @@ def test_color_and_eye_controls_submit_invalidate_and_reset(page):
     page.locator('#resetBtn').click()
     expect(page.locator('#colorSpace')).to_have_value('lab')
     expect(page.locator('#protectEyes')).to_be_checked()
+
+
+def test_lost_start_response_cancels_owned_job(page):
+    from server import app
+    from tests.workers import waiting_worker
+    manager = app.state.jobs
+    original = manager.worker
+    manager.worker = waiting_worker
+    identifiers = []
+    def lost_response(route):
+        response = route.fetch()
+        identifiers.append(response.json()["job_id"])
+        route.abort()
+    try:
+        upload(page)
+        page.route('**/api/process/start', lost_response, times=1)
+        with page.expect_response('**/api/process/cancel/*'):
+            page.locator('#processBtn').click()
+        assert manager.snapshot(identifiers[0])['status'] == 'Stopped'
+        assert manager.jobs[identifiers[0]].process is None
+        expect(page.locator('#processBtn')).to_be_enabled()
+    finally:
+        manager.worker = original
+
+
+def test_presets_physical_canvas_keyboard_and_preview_memory(page):
+    upload(page, sample_image(3000, 2000))
+    assert page.locator('#sourceCanvas').evaluate('(c) => c.width') == 1600
+    page.locator('#sourceCanvas').focus()
+    page.keyboard.press('ArrowRight')
+    assert '30px' in page.locator('#sourceCanvas').evaluate('(c) => c.style.transform')
+    page.locator('#resetBtn').click()
+    assert page.locator('#sourceCanvas').evaluate('(c) => c.width') == 1
+    upload(page)
+    page.locator('#preset').select_option('detailed')
+    expect(page.locator('#kSlider')).to_have_value('24')
+    page.locator('#canvasWidth').fill('40')
+    page.locator('#canvasWidth').dispatch_event('change')
+    complete(page)
+    expect(page.locator('#canvasInfo')).to_contain_text('40.0')
+    href = page.locator('#downloadTemplatePDF').get_attribute('href')
+    pdf = PdfReader(io.BytesIO(page.request.get(href).body()))
+    assert float(pdf.pages[0].mediabox.width) == pytest.approx(400 * 72 / 25.4, abs=.01)
+    page.locator('#showEyes').check()
+    page.locator('#viewChoice').select_option('template')
+    expect(page.locator('.source-viewer')).to_be_hidden()
+    expect(page.locator('.template-viewer')).to_be_visible()
+    page.locator('#resetBtn').click()
+    expect(page.locator('#canvasWidth')).to_have_value('')
+    assert page.locator('#templateCanvas').evaluate('(c) => c.width') == 1
