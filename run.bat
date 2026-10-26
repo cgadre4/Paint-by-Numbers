@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-if not defined UV_PROJECT_ENVIRONMENT set "UV_PROJECT_ENVIRONMENT=%LOCALAPPDATA%\PaintByNumbers\venv-1.2"
+if not defined UV_PROJECT_ENVIRONMENT set "UV_PROJECT_ENVIRONMENT=%LOCALAPPDATA%\PaintByNumbers\venv-1.3"
 uv --version >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Install uv from https://astral.sh/uv/install/windows/

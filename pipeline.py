@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageCms, ImageOps, UnidentifiedImageError
 
+from cluster_cache import load_clusters
 from regions import cleanup_regions, label_dimensions, label_glyph
 from facial import detect_eyes, eye_mask, preserve_eye_pixels
 
@@ -124,7 +125,7 @@ def quantize_image(image, k, seed=None, color_space="rgb"):
     return flat_labels.reshape(image.shape[:2]), centers
 
 
-def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=None, missing_mask=None):
+def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=None, missing_mask=None, *, minimum_font_scale=None):
     """Keep every boundary and only draw numbers whose complete box fits inside."""
     height, width = labels.shape
     template = np.full((height, width, 3), 255, np.uint8)
@@ -133,6 +134,10 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=
     if detail_mask is not None:
         detail_mask = np.asarray(detail_mask, dtype=bool)
     protected = detail_mask is not None and detail_mask.any()
+    minimum_scale = min(font_scale, 0.3) if minimum_font_scale is None else minimum_font_scale
+    if protected and stroke_width != 1:
+        boundary = np.empty((height, width), np.uint8)
+        thin = np.empty_like(boundary)
     placements = []
     unlabelled = 0
     for color_idx in range(k):
@@ -142,9 +147,9 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=
             cv2.drawContours(template, contours, -1, (0, 0, 0), stroke_width)
         else:
             # A thick outline can black out the very details protected in the map.
-            boundary = np.full((height, width), 255, np.uint8)
+            boundary.fill(255)
             cv2.drawContours(boundary, contours, -1, 0, stroke_width)
-            thin = np.full_like(boundary, 255)
+            thin.fill(255)
             cv2.drawContours(thin, contours, -1, 0, 1)
             boundary[detail_mask] = thin[detail_mask]
             np.minimum(template, boundary[:, :, None], out=template)
@@ -157,7 +162,7 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=
             if detail_mask is not None:
                 number_region[detail_mask[y:y+h, x:x+w]] = 0
             found = False
-            for scale in np.linspace(font_scale, min(font_scale, 0.3), 8):
+            for scale in np.linspace(max(font_scale, minimum_scale), minimum_scale, 8):
                 bw, bh, _, padding = label_dimensions(color_idx, stroke_width, scale)
                 if bw > w or bh > h:
                     continue
@@ -202,12 +207,16 @@ def process_job_worker(job_id, shared_state, directory, params):
         progress("Reading image", 5)
         enabled = params.get("protect_eyes", True)
         cache = root / "clusters.npz"
-        reused = cache.exists()
+        cached = None
+        if cache.exists():
+            with Image.open(root / "input.png") as header:
+                size = header.size[::-1] if header.getexif().get(274) in {5, 6, 7, 8} else header.size
+            expected = scaled_dimensions(*size, params["resolution_factor"])[::-1]
+            cached = load_clusters(cache, params["k"], expected, eyes=True)
+        reused = cached is not None
         if reused:
             progress("Reusing color analysis", 40)
-            with np.load(cache, allow_pickle=False) as saved:
-                raw_labels, centers, protection = saved["labels"], saved["centers"], saved["protection"]
-                boxes, face_count = saved["boxes"].tolist(), int(saved["face_count"])
+            raw_labels, centers, protection, boxes, face_count = cached
         else:
             image = cv2.cvtColor(np.asarray(decode_image((root / "input.png").read_bytes(), params, resize=True)), cv2.COLOR_RGB2BGR)
             enabled = params.get("protect_eyes", True)
@@ -227,9 +236,11 @@ def process_job_worker(job_id, shared_state, directory, params):
                 np.savez(stream, labels=raw_labels, centers=centers, protection=protection,
                          boxes=np.asarray(boxes, dtype=np.int32).reshape(-1, 4), face_count=face_count)
             pending_cache.replace(cache)
+        from canvas_size import canvas_metadata, painting_geometry
+        geometry = painting_geometry(raw_labels.shape[1], raw_labels.shape[0], params)
         progress("Cleaning up small regions", 60)
-        labels = cleanup_regions(raw_labels, params["k"], params["area_min"],
-                                 centers, params["stroke_width"], params["font_scale"], protection)
+        labels = cleanup_regions(raw_labels, params["k"], centers=centers,
+                                 protected_mask=protection, **geometry)
         progress("Building preview image", 80)
         preview = centers[labels].astype(np.uint8)
         palette = [{"id": i + 1, "hex": "#{:02x}{:02x}{:02x}".format(*map(int, color)),
@@ -237,7 +248,8 @@ def process_job_worker(job_id, shared_state, directory, params):
         progress("Generating printable template", 90)
         missing_mask = np.zeros(labels.shape, np.uint8)
         template, placements, missing = extract_contours_and_label(
-            labels, params["k"], params["stroke_width"], params["font_scale"], protection, missing_mask)
+            labels, params["k"], geometry["stroke_width"], geometry["font_scale"], protection, missing_mask,
+            minimum_font_scale=geometry["minimum_font_scale"])
         notices = []
         if missing:
             reason = " outside protected eye detail" if boxes else ""
@@ -246,8 +258,8 @@ def process_job_worker(job_id, shared_state, directory, params):
             notices.append("No human eyes were detected; eye protection was not applied. Review small, angled, or obscured faces.")
         elif boxes:
             notices.append(f"Protected {len(boxes)} detected eye area(s), using thin outlines and keeping numbers outside them. Fine eye regions may remain unnumbered.")
-        from canvas_size import canvas_metadata
-        physical = canvas_metadata(labels.shape[1], labels.shape[0], params, placements)
+        physical = canvas_metadata(labels.shape[1], labels.shape[0], {**params, "stroke_width": geometry["stroke_width"]}, placements)
+        physical["sizing_mode"] = params.get("sizing_mode", "pixels")
         notices.extend(physical.pop("warnings"))
         progress("Encoding result", 95)
         result = {"processed_image": img_to_base64(preview), "template_image": img_to_base64(template),
@@ -258,7 +270,7 @@ def process_job_worker(job_id, shared_state, directory, params):
                   "warnings": notices, "canvas": physical,
                   "missing_regions": {"count": missing, "area_percent": round(100 * np.count_nonzero(missing_mask) / missing_mask.size, 3),
                                       "mask": img_to_base64(missing_mask)},
-                  "diagnostics": {"backend": "CPU", "threads": cv2.getNumThreads(), "reused_color_analysis": reused, "stages_seconds": timings},
+                  "diagnostics": {"backend": "CPU", "threads": cv2.getNumThreads(), "reused_color_analysis": reused, "render_geometry": geometry, "stages_seconds": timings},
                   "schema_version": 2}
         pending = root / "result.tmp"
         pending.write_text(json.dumps(result), encoding="utf-8")

@@ -95,9 +95,11 @@ def prepare_quantization(source, params, seed, cache):
     producer = (inspect.getsource(quantize_image) + inspect.getsource(prepare_quantization)).encode()
     signature = hashlib.sha256(producer + source.tobytes()+str(source.shape).encode()+json.dumps(params, sort_keys=True).encode()+str(seed).encode()+cv2.__version__.encode()).hexdigest()
     path = Path(cache)/f'{signature}.npz'
+    from cluster_cache import load_clusters
     if path.exists():
-        with np.load(path, allow_pickle=False) as data:
-            return data['labels'], data['centers']
+        cached = load_clusters(path, params["k"], source.shape[:2])
+        if cached is not None:
+            return cached
     filtered = cv2.bilateralFilter(source, params['bilateral_diameter'], params['sigma_color'], params['sigma_color'])
     raw, centers = quantize_image(filtered, params['k'], seed)
     path.parent.mkdir(parents=True, exist_ok=True)

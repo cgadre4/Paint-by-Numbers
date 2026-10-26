@@ -304,3 +304,10 @@ def test_omitted_color_options_use_perceptual_and_eye_defaults(client, params):
     assert state['status'] == 'Complete', state
     assert state['result']['parameters']['color_space'] == 'lab'
     assert state['result']['parameters']['protect_eyes'] is True
+
+
+@pytest.mark.parametrize('field,value', [('sizing_mode','auto'),('paper_size','legal')])
+def test_print_options_reject_unknown_values(client,params,field,value):
+    params[field]=value
+    response=client.post('/api/process/start',data=params,files={'file':('test.png',sample_image(),'image/png')})
+    assert response.status_code==422

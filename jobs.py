@@ -207,7 +207,7 @@ class JobManager:
 
     def export(self, job_id, kind, format_):
         from exports import make_export
-        if kind not in {"template", "palette"} or format_ not in {"png", "pdf"}:
+        if kind not in {"template", "palette", "tiles"} or format_ not in {"png", "pdf"} or (kind == "tiles" and format_ != "pdf"):
             raise ValueError("Unknown export format")
         with self.result_lease(job_id) as (job, state):
             with job.export_lock:

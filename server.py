@@ -165,6 +165,8 @@ async def start_processing(
     # A bool Form treats an absent checkbox as False; preserve our API default.
     protect_eyes: Literal["true", "false"] = Form("true"),
     canvas_width_cm: float = Form(0, ge=RANGES["canvas_width_cm"][0], le=RANGES["canvas_width_cm"][1]),
+    sizing_mode: Literal["physical", "pixels"] = Form("physical"),
+    paper_size: Literal["a4", "letter"] = Form("a4"),
     request_id: UUID | None = Form(None),
 ):
     params = dict(k=k, resolution_factor=resolution_factor, bilateral_diameter=bilateral_diameter,
@@ -172,12 +174,12 @@ async def start_processing(
     if not all(math.isfinite(value) for value in params.values()):
         raise HTTPException(422, "Parameters must be finite numbers.")
     if not math.isfinite(canvas_width_cm) or 0 < canvas_width_cm < 5:
-        raise HTTPException(422, "Canvas width must be 0 (A4 fit) or 5-200 cm.")
+        raise HTTPException(422, "Canvas width must be 0 (fit selected paper) or 5-200 cm.")
     form = await request.form()
-    allowed = set(params) | {"file", "color_space", "protect_eyes", "canvas_width_cm", "request_id"}
+    allowed = set(params) | {"file", "color_space", "protect_eyes", "canvas_width_cm", "request_id", "sizing_mode", "paper_size"}
     if set(form) - allowed:
         raise HTTPException(422, "Unknown processing option.")
-    params.update(color_space=color_space, protect_eyes=(protect_eyes == "true"), canvas_width_cm=canvas_width_cm)
+    params.update(color_space=color_space, protect_eyes=(protect_eyes == "true"), canvas_width_cm=canvas_width_cm, sizing_mode=sizing_mode, paper_size=paper_size)
     try:
         async with api_app.state.upload_lock:
             data = await file.read(MAX_UPLOAD_BYTES + 1)
@@ -220,7 +222,7 @@ def cancel_request(request_id: UUID):
 
 
 @api_app.get("/process/export/{job_id}/{kind}.{format_}")
-def export_result(job_id: UUID, kind: Literal["template", "palette"], format_: Literal["png", "pdf"]):
+def export_result(job_id: UUID, kind: Literal["template", "palette", "tiles"], format_: Literal["png", "pdf"]):
     try:
         data = api_app.state.jobs.export(str(job_id), kind, format_)
     except JobNotFound as exc:

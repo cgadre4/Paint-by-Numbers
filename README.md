@@ -6,7 +6,7 @@ A local web app that turns a still image into a limited-color preview, a numbere
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then double-click `run.bat`. It installs the locked dependencies, starts the local server, and opens `http://127.0.0.1:8000`. Close the server with Ctrl+C so active jobs and temporary files are cleaned up.
 
-The launcher stores its environment in `%LOCALAPPDATA%\PaintByNumbers\venv-1.2`, keeping executable dependencies off synced/network project drives. Set `UV_PROJECT_ENVIRONMENT` before launching to choose another location.
+The launcher stores its environment in `%LOCALAPPDATA%\PaintByNumbers\venv-1.3`, keeping executable dependencies off synced/network project drives. Set `UV_PROJECT_ENVIRONMENT` before launching to choose another location.
 
 ## Run from a terminal
 
@@ -20,7 +20,7 @@ uv run --locked python server.py
 On Windows, when working from a synced drive, set this first in PowerShell:
 
 ```powershell
-$env:UV_PROJECT_ENVIRONMENT = Join-Path $env:LOCALAPPDATA 'PaintByNumbers\venv-1.2'
+$env:UV_PROJECT_ENVIRONMENT = Join-Path $env:LOCALAPPDATA 'PaintByNumbers\venv-1.3'
 ```
 
 For development without opening a browser:
@@ -34,7 +34,7 @@ Use one server worker. Jobs are owned by that process; multi-worker deployment i
 ## Workflow
 
 1. Browse or drop a PNG, JPEG, WebP, or BMP still image.
-2. Choose **Simple** (8 paints, stronger simplification) or **Detailed** (24 paints, gentler smoothing), then optionally set canvas width in centimetres. Height follows the image proportions. Open **Advanced settings** to adjust individual controls. **Perceptual (Lab)** color matching and **Protect detected human eyes** are enabled by default; **Classic (RGB)** remains available.
+2. Choose **Simple** (8 paints, stronger simplification) or **Detailed** (24 paints, gentler smoothing), then optionally set canvas width in centimetres or inches. Height follows the image proportions. Open **Advanced settings** to adjust individual controls. **Perceptual (Lab)** color matching and **Protect detected human eyes** are enabled by default; **Classic (RGB)** remains available.
 3. Select **Process Image** (or Ctrl/Cmd+Enter). **Stop** cancels processing. Reset and new uploads invalidate earlier results.
 4. Click a palette number to highlight its regions; click again to clear it. Wheel/slider zoom and drag-to-pan affect all three canvases. Arrow buttons or focused-canvas arrow keys pan; +/- zoom and Home resets. Use **Show** to switch views and enable the protected-eye or unnumbered-region overlays for review.
 5. Download template and palette as PNG or PDF. **Print Ready View** isolates the template; browser printing uses the clean template without highlighting or viewport transforms.
@@ -49,11 +49,11 @@ Changing processing settings invalidates the current result. Processing is expli
 - Animated and unsupported images receive a clear validation error. EXIF orientation is normalized, embedded ICC profiles are converted to sRGB, and transparency is composited onto white. Invalid profiles are rejected with an actionable message. Decoding runs in the owned worker; its errors appear in job status.
 - Two bounded uploads and two jobs can run concurrently. Uploads have a 30-second body deadline. Processing times out after five minutes.
 - Finished jobs expire after 15 minutes; at most eight finished jobs are retained. Download results before they expire. Temporary data is removed on expiry and normal shutdown.
-- With canvas width blank, template PDF fits a raster template on one A4 page (landscape for wide images), with 10 mm margins. A width of 5-200 cm produces a PDF page at that exact canvas width, with proportional height (maximum 200 cm) and no added margins. Print custom PDFs at **100% / actual size**; printer Fit-to-page changes their dimensions. Large pages require a suitable printer or external tiling software. PNG exports retain processed pixel dimensions; browser printing remains an A4 convenience view. It is not a vector PDF. Palette PDF includes all colors, numbers, hex values, and RGB values.
+- With canvas width blank, template PDF fits a raster template on the selected A4 or US Letter page (landscape for wide images), with 10 mm margins. A width of 5-200 cm produces a PDF page at that exact canvas width, with proportional height (maximum 200 cm) and no added margins. Print custom PDFs at **100% / actual size**; printer Fit-to-page changes their dimensions. Use **Tiled PDF** for a larger canvas on ordinary A4/Letter sheets: orientation is selected to minimize sheet count, with 10 mm margins, 5 mm overlap, matching alignment crosses, trim marks and a 50 mm calibration ruler. Print at 100%, measure the ruler, trim margins and align overlapping strips. Exports are capped at 100 sheets. PNG exports retain processed pixel dimensions; browser printing fits the selected paper and image orientation, while exact custom dimensions require the PDF. It is not a vector PDF. Palette PDF includes all colors, numbers, hex values, and RGB values.
 - Except for protected eye regions, small regions merge only into edge-adjacent regions, using color similarity and shared boundary length. Small unnumberable regions receive additional conservative cleanup; stronger contrasts and large thin features are preserved.
-- Numbers are placed only when their complete bounding box fits inside a region. If some regions cannot fit a number, the app reports how many. Canvas size changes export scale and readability warnings, not clustering or cleanup thresholds in this release. Enlargement cannot recover lost detail. The app reports effective pixel density, outline width and minimum number height; numbers under 2 mm or custom output below 150 ppi trigger review warnings. These are advisory thresholds, not a guarantee of paintability. Vector export, automatic tiling, advanced simplification and manual region editing remain future work.
+- Numbers are placed only when their complete bounding box fits inside a region. If some regions cannot fit a number, the app reports how many. **Physical sizing** (default) uses canvas dimensions for number-fit cleanup and rendering: number ink is at least 2 mm tall, outlines target 0.3 mm (at least one pixel), and protected eyes retain one-pixel contours. The explicit noise-removal area cutoff remains in processing pixels; additional fit merges remain bounded and preserve strong boundaries. **Pixels** mode retains the advanced font/outline controls and previous geometry. Changing canvas size reruns cleanup/rendering while reusing valid retained color analysis. Enlargement cannot recover lost detail. The app reports effective pixel density, outline width and minimum number height; numbers under 2 mm or custom output below 150 ppi trigger review warnings. These are advisory thresholds, not a guarantee of paintability. Vector export, advanced simplification and manual region editing remain future work. Very small canvases may have more unnumbered regions because readable numbers take space; review warnings and the color reference.
 - Color matching uses OpenCV K-means in float CIELab by default, or RGB when selected. K-means is randomized. Exact palette order and pixel output can vary between runs.
-- The application uses portable CPU processing, with at most two OpenCV threads per worker. An optional OpenCL helper remains tested for experiments but is not enabled by the application. Immutable color analysis is reused within retained jobs when only cleanup, label, outline or canvas settings change. Exports are cached for the job lifetime.
+- The application uses portable CPU processing, with at most two OpenCV threads per worker. An optional OpenCL helper remains tested for experiments but is not enabled by the application. Immutable color analysis is reused within retained jobs when only cleanup, label, outline or canvas settings change. Exports are cached for the job lifetime. Color caches are shape/type/range validated, read without pickle, bounded in expanded size and rebuilt after corruption; publication replaces the owned cache atomically.
 
 ## Tests
 
@@ -108,8 +108,17 @@ The browser-only API is now schema version 2. `GET /api/settings` supplies prese
 
 ## Troubleshooting and release validation
 
-Keep Windows Application Control enabled. A corrupted or blocked old environment is not repaired by copying or renaming executables. Version 1.2 launchers use a fresh local `venv-1.2` directory; an explicit `UV_PROJECT_ENVIRONMENT` override is still respected. If startup fails, inspect the reported error and use an installed, permitted Python/Node runtime. Never weaken operating-system security. The prior environment is left untouched.
+Keep Windows Application Control enabled. A corrupted or blocked old environment is not repaired by copying or renaming executables. Version 1.2 launchers use a fresh local `venv-1.3` directory; an explicit `UV_PROJECT_ENVIRONMENT` override is still respected. If startup fails, inspect the reported error and use an installed, permitted Python/Node runtime. Never weaken operating-system security. The prior environment is left untouched.
 
 CI tests Python 3.12 and 3.13 on Linux and Windows, runs scoped Ruff checks and audits the locked runtime/development dependencies. macOS and non-Chromium browsers are not yet verified release targets. No frontend build step or cloud service is required.
 
 Job latency and sampled process-tree memory can be measured with `uv run --locked python -m benchmarks.jobs` (cached photos required). These are diagnostic measurements, not CI timing thresholds. The sampled-clustering experiment is benchmark-only: `uv run --locked python -m benchmarks.cpu`. It compares a 65,536-pixel sample with full Lab K-means using identical source/filter/protection settings and three timing repeats. See [1.2 release evaluation](benchmarks/RELEASE_1_2_RESULTS.md) for the selection decision and limitations. Existing historical benchmark references remain frozen.
+
+## Release 1.3 print-quality evaluation
+
+```sh
+uv run --locked python -m benchmarks.painting --download
+uv run --locked python -m benchmarks.painting --size 768 --seed 42 --widths 5 40 --output .local/painting-small
+```
+
+This pairs the prior pixel geometry with physical geometry on identical Lab clusters, across both presets and canvas sizes. The four additional credited portraits are pinned in `benchmarks/portrait_sources.json`, with evaluation-only eye/nose/mouth annotations. Photos and rendered reports stay in ignored local storage; CI uses synthetic fixtures and never downloads photos. See `benchmarks/RELEASE_1_3_RESULTS.md` for measured results and remaining limitations.
