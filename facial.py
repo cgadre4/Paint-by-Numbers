@@ -48,6 +48,12 @@ def preserve_eye_pixels(source, filtered, mask):
     if not mask.any():
         return filtered
     result = filtered.copy()
-    gentle = cv2.bilateralFilter(source, 3, 25, 25)
-    result[mask] = gentle[mask]
+    # Filter only the protected bounding rectangle plus the one-pixel kernel halo.
+    points = cv2.findNonZero(mask.astype(np.uint8))
+    x, y, w, h = cv2.boundingRect(points)
+    left, top = max(0, x - 1), max(0, y - 1)
+    right, bottom = min(source.shape[1], x + w + 1), min(source.shape[0], y + h + 1)
+    gentle = cv2.bilateralFilter(source[top:bottom, left:right], 3, 25, 25)
+    selected = mask[top:bottom, left:right]
+    result[top:bottom, left:right][selected] = gentle[selected]
     return result

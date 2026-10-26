@@ -1,9 +1,7 @@
 /* Paint-by-Numbers: one owner for each upload/job, with stale-response guards. */
 (() => {
     'use strict';
-    const defaults = Object.freeze({resolution_factor: 1, k: 8, bilateral_diameter: 7,
-        sigma_color: 75, area_min: 50, stroke_width: 2, font_scale: 1,
-        color_space: 'lab', protect_eyes: true});
+    let defaults = null, presets = null;
     const controls = {
         resolution_factor: ['resolutionFactor', 'resolutionBadge'], k: ['kSlider', 'kBadge'],
         bilateral_diameter: ['bilateralDiameter', 'bilateralBadge'], sigma_color: ['sigmaColor', 'sigmaBadge'],
@@ -13,19 +11,25 @@
     const el = Object.fromEntries([...document.querySelectorAll('[id]')].map(node => [node.id, node]));
     const canvases = [el.sourceCanvas, el.quantizedCanvas, el.templateCanvas];
     const state = {revision: 0, source: null, image: null, active: null, result: null,
-        template: null, labels: null, selected: null, parameters: {...defaults}, zoom: 100, panX: 0, panY: 0};
+        template: null, labels: null, selected: null, parameters: {}, configured: false, zoom: 100, panX: 0, panY: 0};
 
     function message(text, type = 'info') {
         el.statusMessage.textContent = text;
         el.statusMessage.className = `status-message ${type}`;
     }
     function updateControls() {
+        if (!state.configured) {
+            el.processBtn.disabled = true;
+            return;
+        }
         for (const [name, [slider, badge]] of Object.entries(controls)) {
             el[slider].value = state.parameters[name];
             el[badge].textContent = ['resolution_factor', 'font_scale'].includes(name)
                 ? state.parameters[name].toFixed(1) : state.parameters[name];
             el[slider].disabled = Boolean(state.active);
         }
+        el.canvasWidth.value = state.parameters.canvas_width_cm || '';
+        el.canvasWidth.disabled = el.preset.disabled = Boolean(state.active);
         el.colorSpace.value = state.parameters.color_space;
         el.protectEyes.checked = state.parameters.protect_eyes;
         el.colorSpace.disabled = el.protectEyes.disabled = Boolean(state.active);
@@ -52,6 +56,8 @@
         state.result = state.template = state.labels = state.selected = null;
         el.resultsContainer.classList.add('hidden');
         el.printTemplate.removeAttribute('src');
+        el.canvasInfo.textContent = '';
+        state.missing = null;
         document.body.classList.remove('print-ready');
         el.printReadyBtn.textContent = 'Print Ready View';
         el.printReadyBtn.setAttribute('aria-pressed', 'false');
@@ -62,7 +68,7 @@
         el.palettePreview.append(empty);
         el.palettePreview.classList.add('empty');
         for (const name of ['quantized', 'template']) {
-            el[`${name}Canvas`].getContext('2d').clearRect(0, 0, el[`${name}Canvas`].width, el[`${name}Canvas`].height);
+            el[`${name}Canvas`].width = el[`${name}Canvas`].height = 1;
             el[`${name}Placeholder`].classList.remove('hidden');
             el[`${name}Placeholder`].textContent = 'Process an image to preview';
         }
@@ -85,11 +91,12 @@
         return response;
     }
     async function stopRemote(run) {
-        if (!run?.jobId || run.stopSent) return;
+        if (!run?.requestId || run.stopSent) return;
         run.stopSent = true;
         try {
-            await request(`/api/process/stop/${run.jobId}`, {method: 'POST'});
+            await request(`/api/process/cancel/${run.requestId}`, {method: 'POST'});
         } catch (error) {
+            run.stopSent = false;
             // Local state stays invalidated even if the server is temporarily unreachable.
             if (!state.active && state.revision === run.cancelRevision) message(`Stopped waiting. Server cancellation could not be confirmed: ${error.message}`, 'error');
         }
@@ -121,10 +128,11 @@
         });
     }
     function draw(canvas, image) {
-        canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+        const scale = canvas === el.sourceCanvas ? Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight)) : 1;
+        canvas.width = Math.round(image.naturalWidth * scale); canvas.height = Math.round(image.naturalHeight * scale);
         const context = canvas.getContext('2d');
         context.fillStyle = 'white'; context.fillRect(0, 0, canvas.width, canvas.height);
-        context.drawImage(image, 0, 0);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
     }
     async function handleFile(file) {
         if (!file) return;
@@ -134,7 +142,7 @@
         }
         const revision = invalidate();
         state.source = state.image = null;
-        el.sourceCanvas.getContext('2d').clearRect(0, 0, el.sourceCanvas.width, el.sourceCanvas.height);
+        el.sourceCanvas.width = el.sourceCanvas.height = 1;
         el.sourcePlaceholder.classList.remove('hidden');
         updateControls(); resetView();
         const url = URL.createObjectURL(file);
@@ -142,7 +150,7 @@
             const image = await loadImage(url);
             if (state.revision !== revision) return;
             if (image.naturalWidth * image.naturalHeight > 40000000) throw new Error('The source image must contain at most 40 million pixels.');
-            state.source = file; state.image = image;
+            state.source = file; state.image = {naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight};
             draw(el.sourceCanvas, image);
             el.sourcePlaceholder.classList.add('hidden');
             message('Image loaded. Choose settings and process it.', 'success');
@@ -154,7 +162,8 @@
         }
     }
     async function processImage() {
-        if (!state.source || state.active) return;
+        if (!state.source || state.active || !state.configured) return;
+        if (!el.canvasWidth.reportValidity()) return;
         const width = Math.round(state.image.naturalWidth * state.parameters.resolution_factor);
         const height = Math.round(state.image.naturalHeight * state.parameters.resolution_factor);
         if (width < 1 || height < 1 || width * height < state.parameters.k) {
@@ -162,13 +171,14 @@
         }
         if (width * height > 4000000) return message('Reduce Resolution Factor: processing is limited to 4 million pixels.', 'error');
         const revision = invalidate();
-        const run = {revision, jobId: null, timer: null, pollController: null, stopSent: false, failures: 0};
+        const run = {revision, requestId: crypto.randomUUID(), jobId: null, timer: null, pollController: null, stopSent: false, failures: 0};
         state.active = run;
         updateControls();
         el.processBtnText.textContent = 'Starting…';
         message('Starting processing…');
         const form = new FormData();
         form.append('file', state.source, state.source.name);
+        form.append('request_id', run.requestId);
         for (const [key, value] of Object.entries(state.parameters)) form.append(key, String(value));
         try {
             const response = await request('/api/process/start', {method: 'POST', body: form});
@@ -178,6 +188,8 @@
             void poll(run);
         } catch (error) {
             if (!isCurrent(run)) return;
+            run.cancelRevision = state.revision;
+            void stopRemote(run);
             state.active = null; updateControls();
             message(error.message, 'error');
         }
@@ -199,14 +211,22 @@
             el.processBtnText.textContent = `${data.status} (${data.progress || 0}%)`;
             if (data.status === 'Complete' && data.result) {
                 const result = data.result;
-                const [preview, template, labels] = await Promise.all([
-                    loadImage(result.processed_image), loadImage(result.template_image), loadImage(result.label_map)
+                const [preview, template, labels, missing] = await Promise.all([
+                    loadImage(result.processed_image), loadImage(result.template_image), loadImage(result.label_map), loadImage(result.missing_regions.mask)
                 ]);
                 if (!isCurrent(run)) return;
                 const labelCanvas = document.createElement('canvas');
                 draw(labelCanvas, labels);
-                state.labels = labelCanvas.getContext('2d').getImageData(0, 0, labels.naturalWidth, labels.naturalHeight).data;
+                const rgba = labelCanvas.getContext('2d').getImageData(0, 0, labels.naturalWidth, labels.naturalHeight).data;
+                state.labels = new Uint8Array(rgba.length / 4);
+                for (let i = 0; i < state.labels.length; i++) state.labels[i] = rgba[i * 4];
+                draw(labelCanvas, missing);
+                const missingRGBA = labelCanvas.getContext('2d').getImageData(0, 0, missing.naturalWidth, missing.naturalHeight).data;
+                state.missing = new Uint8Array(state.labels.length);
+                for (let i = 0; i < state.missing.length; i++) state.missing[i] = missingRGBA[i * 4];
+                labelCanvas.width = labelCanvas.height = 1;
                 state.result = result; state.template = template;
+                el.canvasInfo.textContent = result.canvas ? `Canvas: ${(result.canvas.width_mm / 10).toFixed(1)} × ${(result.canvas.height_mm / 10).toFixed(1)} cm; ${result.canvas.effective_dpi} ppi. ${result.canvas.custom ? 'Custom PDF: print at 100%, without Fit to page.' : 'PDF fits A4 with 10 mm margins.'}` : '';
                 draw(el.quantizedCanvas, preview); draw(el.templateCanvas, template);
                 transform();
                 el.quantizedPlaceholder.classList.add('hidden');
@@ -245,6 +265,9 @@
             const button = document.createElement('button');
             button.type = 'button'; button.className = 'palette-swatch';
             button.style.backgroundColor = color.hex;
+            const linear = color.rgb.map(c => c / 255 <= 0.04045 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4);
+            const luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+            button.style.color = luminance > 0.179 ? '#000' : '#fff';
             button.textContent = color.id;
             button.dataset.id = color.id;
             button.title = `Color ${color.id}: ${color.hex.toUpperCase()} (RGB ${color.rgb.join(', ')})`;
@@ -262,14 +285,33 @@
             el.palettePreview.append(button);
         }
     }
-    function drawHighlight() {
+    let highlightRevision = 0;
+    async function drawHighlight() {
+        const revision = ++highlightRevision;
+        const resultRevision = state.revision;
+        const selected = state.selected;
+        const labels = state.labels, missing = state.missing;
         if (!state.template) return;
         draw(el.templateCanvas, state.template);
-        if (!state.selected || document.body.classList.contains('print-ready')) return;
+        if (document.body.classList.contains('print-ready')) return;
+        if (el.showEyes.checked) {
+            const overlay = el.templateCanvas.getContext('2d');
+            overlay.strokeStyle = '#b000cc'; overlay.lineWidth = 2;
+            for (const [x,y,w,h] of state.result.eye_protection.boxes) overlay.strokeRect(x,y,w,h);
+        }
+        if (!selected && !el.showMissing.checked) return;
         const context = el.templateCanvas.getContext('2d');
         const image = context.getImageData(0, 0, el.templateCanvas.width, el.templateCanvas.height);
         for (let offset = 0; offset < image.data.length; offset += 4) {
-            if (state.labels[offset] + 1 === state.selected) {
+            if (offset && offset % 262144 === 0) {
+                await new Promise(resolve => requestAnimationFrame(resolve));
+                if (revision !== highlightRevision || resultRevision !== state.revision) return;
+            }
+            if (el.showMissing.checked && missing[offset / 4]) {
+                image.data[offset] = Math.round(image.data[offset] * .6 + 255 * .4);
+                image.data[offset + 1] = Math.round(image.data[offset + 1] * .6 + 120 * .4);
+                image.data[offset + 2] = Math.round(image.data[offset + 2] * .6);
+            } else if (labels[offset / 4] + 1 === selected) {
                 image.data[offset] = Math.round(image.data[offset] * 0.65);
                 image.data[offset + 1] = Math.round(image.data[offset + 1] * 0.65 + 166 * 0.35);
                 image.data[offset + 2] = Math.round(image.data[offset + 2] * 0.65 + 255 * 0.35);
@@ -278,10 +320,12 @@
         context.putImageData(image, 0, 0);
     }
     function resetAll() {
+        if (!state.configured) return;
         invalidate();
         state.parameters = {...defaults}; state.source = state.image = null;
         el.fileInput.value = '';
-        el.sourceCanvas.getContext('2d').clearRect(0, 0, el.sourceCanvas.width, el.sourceCanvas.height);
+        el.preset.value = 'simple';
+        el.sourceCanvas.width = el.sourceCanvas.height = 1;
         el.sourcePlaceholder.classList.remove('hidden');
         updateControls(); resetView();
         message('Image and settings reset.');
@@ -320,6 +364,7 @@
         el[slider].addEventListener('input', () => {
             if (state.active) return;
             state.parameters[name] = Number(el[slider].value);
+            el.preset.value = 'custom';
             if (state.result) { invalidate(); message('Settings changed. Process the image to update the result.'); }
             updateControls();
         });
@@ -332,6 +377,27 @@
             updateControls();
         });
     }
+    el.canvasWidth.addEventListener('change', () => {
+        if (!el.canvasWidth.checkValidity()) return message('Choose a canvas width from 5 to 200 cm, or leave it blank for A4.', 'error');
+        state.parameters.canvas_width_cm = Number(el.canvasWidth.value) || 0;
+        invalidate(); updateControls();
+        message('Canvas width changed. Process to update export and readability checks.');
+    });
+    el.preset.addEventListener('change', () => {
+        if (!presets[el.preset.value]) return;
+        state.parameters = {...presets[el.preset.value], canvas_width_cm: state.parameters.canvas_width_cm};
+        invalidate(); updateControls();
+        message('Preset applied. Review the result, especially fine facial details.');
+    });
+    for (const button of document.querySelectorAll('[data-pan]')) button.addEventListener('click', () => {
+        const [x, y] = button.dataset.pan.split(',').map(Number);
+        state.panX += x; state.panY += y; transform();
+    });
+    el.viewChoice.addEventListener('change', () => {
+        document.querySelector('.canvas-container').dataset.view = el.viewChoice.value;
+    });
+    el.showEyes.addEventListener('change', drawHighlight);
+    el.showMissing.addEventListener('change', drawHighlight);
     el.processBtn.addEventListener('click', processImage);
     el.stopBtn.addEventListener('click', () => { invalidate(); message('Processing cancelled.'); });
     el.resetBtn.addEventListener('click', resetAll);
@@ -348,6 +414,17 @@
         if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); void processImage(); }
     });
     for (const canvas of canvases) {
+        canvas.tabIndex = 0;
+        canvas.setAttribute('aria-label', `${canvas.id.replace('Canvas', '')} image. Arrow keys pan, plus and minus zoom, Home resets.`);
+        canvas.addEventListener('keydown', event => {
+            const movement = {ArrowLeft: [-30,0], ArrowRight: [30,0], ArrowUp: [0,-30], ArrowDown: [0,30]}[event.key];
+            if (movement) { state.panX += movement[0]; state.panY += movement[1]; }
+            else if (event.key === '+' || event.key === '=') state.zoom = Math.min(300, state.zoom + 10);
+            else if (event.key === '-') state.zoom = Math.max(25, state.zoom - 10);
+            else if (event.key === 'Home') resetView();
+            else return;
+            event.preventDefault(); transform();
+        });
         let drag = null;
         canvas.addEventListener('wheel', event => {
             event.preventDefault();
@@ -368,11 +445,19 @@
         for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) canvas.addEventListener(event, () => { drag = null; });
     }
     window.addEventListener('pagehide', () => {
-        if (state.active?.jobId) navigator.sendBeacon(`/api/process/stop/${state.active.jobId}`);
+        if (state.active?.requestId) navigator.sendBeacon(`/api/process/cancel/${state.active.requestId}`);
     });
     void request('/api/hardware-status').then(response => response.json()).then(status => {
         el.hwAccelStatus.textContent = status.message;
         el.hwAccelStatus.classList.toggle('active', status.has_hardware_acceleration);
     }).catch(() => { el.hwAccelStatus.textContent = 'Hardware status unavailable; processing may still be available.'; });
     clearResults(); updateControls(); transform();
+    void request('/api/settings').then(response => response.json()).then(config => {
+        defaults = Object.freeze(config.defaults); presets = config.presets;
+        state.parameters = {...defaults}; state.configured = true;
+        for (const [name, [slider]] of Object.entries(controls)) {
+            [el[slider].min, el[slider].max] = config.ranges[name];
+        }
+        updateControls();
+    }).catch(error => message(`Settings could not be loaded: ${error.message}. Reload the page.`, 'error'));
 })();

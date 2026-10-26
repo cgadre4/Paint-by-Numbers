@@ -2,6 +2,8 @@
 import argparse
 import hashlib
 import io
+import inspect
+import tempfile
 import json
 import platform
 import statistics
@@ -90,7 +92,8 @@ def detail_metrics(labels, raw, centers, placements):
 
 
 def prepare_quantization(source, params, seed, cache):
-    signature = hashlib.sha256(source.tobytes()+str(source.shape).encode()+json.dumps(params, sort_keys=True).encode()+str(seed).encode()+cv2.__version__.encode()).hexdigest()
+    producer = (inspect.getsource(quantize_image) + inspect.getsource(prepare_quantization)).encode()
+    signature = hashlib.sha256(producer + source.tobytes()+str(source.shape).encode()+json.dumps(params, sort_keys=True).encode()+str(seed).encode()+cv2.__version__.encode()).hexdigest()
     path = Path(cache)/f'{signature}.npz'
     if path.exists():
         with np.load(path, allow_pickle=False) as data:
@@ -98,7 +101,13 @@ def prepare_quantization(source, params, seed, cache):
     filtered = cv2.bilateralFilter(source, params['bilateral_diameter'], params['sigma_color'], params['sigma_color'])
     raw, centers = quantize_image(filtered, params['k'], seed)
     path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(path, labels=raw, centers=centers)
+    with tempfile.NamedTemporaryFile(dir=path.parent, suffix='.npz', delete=False) as temporary:
+        pending = Path(temporary.name)
+    try:
+        np.savez_compressed(pending, labels=raw, centers=centers)
+        pending.replace(path)
+    finally:
+        pending.unlink(missing_ok=True)
     return raw, centers
 
 

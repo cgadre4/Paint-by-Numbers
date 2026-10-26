@@ -70,3 +70,12 @@ Default settings are palettes 8/16/32, seeds 12345/42, maximum side 512 without 
 All methods are compared with the same resized original: mean Euclidean float-Lab distance (Delta E 76), plus source Canny edges (thresholds 60/120, one-pixel tolerance) inside fixed eye/face boxes. Edge F1 balances precision and recall but is not semantic or perceptual ground truth. Report human eyes separately from the cat, which this detector does not target. Also compare missing-region counts, unnumbered pixel coverage, raw/pre-cleanup metrics, and visual previews/templates. Diagnostic single-sample quantization/cleanup timings and detector time are recorded separately; these are not a controlled speed comparison.
 
 Outputs under ignored `.local/facial-benchmark/` include JSON metrics/settings/detected boxes, a Markdown table, and comparison PNGs with full previews, raw cluster crops, cleaned crops, and template crops. Source images, downloads, and generated previews remain excluded from Git. The offline test suite checks runner artifacts using synthetic inputs. See [the measured decision and limitations](FACIAL_RESULTS.md).
+
+
+## Release 1.2 performance checks
+
+`uv run --locked python -m benchmarks.cpu` compares full Lab K-means with a seeded uniform 65,536-pixel fit and native chunked full-image assignment. It is benchmark-only; no new application mode is enabled. Cached pinned photos are required. Use `--size 1024 --colors 16 --seed 2026` for the second scale/seed check.
+
+`uv run --locked python -m benchmarks.jobs` measures cold job batches and a subsequent style change that reuses color analysis, at one/two workers, 8/16/32 colors, and approximately 0.2/1/4 MP. It includes worker startup, decode and result reads; it excludes HTTP/browser time and server startup. The psutil RSS sampler sums parent/child resident sets every 50 ms, can double-count shared pages, and can miss brief peaks. One sample per configuration establishes a diagnostic baseline, not p95 or a cross-machine speed guarantee. Outputs stay under ignored `.local/`.
+
+See [release results](RELEASE_1_2_RESULTS.md). Photo quantization cache keys now include producer code as well as source, settings, seed and OpenCV version, and files are published atomically. Historical references are unchanged.

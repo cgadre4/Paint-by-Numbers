@@ -1,5 +1,18 @@
 # Status Log - Paint-by-Numbers App
 
+## 2026-10-26: Version 1.2 smaller browser release
+[DONE] Implemented the approved reliability/security fixes, including owned decode, bounded uploads, local request trust, cancellation identity, resilient cleanup/read leases and terminal-worker capacity handling. Upgraded Pillow 13, normalized ICC profiles, and fixed rounding/indexed-image scaling.
+[DONE] Added shared Simple/Detailed presets, custom physical canvas width/PDF geometry with readability warnings, bounded previews, compact review masks, keyboard/button panning, responsive views and contrast corrections. Added immutable color-analysis reuse and per-job export caching; kept full Lab K-means after a sampled-fit experiment showed detail regressions.
+[DONE] Final local full suite: 113 passed. Ruff and JavaScript syntax passed; locked runtime/dev advisory scan found no known vulnerabilities. Runtime-only server upload/all exports and three extra real-photo browser workflows passed. Visually reviewed 32-color palettes, A4/custom portrait/landscape PDFs, mobile and enlarged eyes.
+[DONE] Completed synthetic, 18-case photo, 36-case facial plus six second-size/seed checks, 24 sampled-CPU comparisons and 18 one/two-worker latency/RSS cases. Zero protected eye pixels recolored. See benchmarks/RELEASE_1_2_RESULTS.md for methods, observed performance and limitations.
+Publication: prepared on codex/smaller-release; merge/push and exact-SHA Linux/Windows Python 3.12/3.13 plus security CI are verified and reported after publication. Future editor, save/reopen, tiling, vector/GPU/segmentation work remains deferred in the dated audit.
+
+## 2026-10-26: Audit and execution planning (no application changes)
+[DONE] Audited production code, frontend, tests, benchmarks, dependency lock, launchers and CI. Saved the two-track register and phased plan in updates-2026-10-26.md: 17 bug/engineering-defect items and 16 proposed improvements, with evidence and acceptance checks.
+[DONE] Revalidated 87 tests through the permitted installed Python 3.12 interpreter with existing project packages; normal cached venv launcher is currently blocked by Application Control. JavaScript syntax passed. Ran safe audit-only probes and CPU/OpenCL stage measurements; inspected desktop/mobile screenshots and checked current Pillow advisories.
+[DONE] Recorded user decisions: portable CPU performance first, with separate Simple and Detailed presets; new GPU backends are deferred.
+Pending: discuss remaining print/API/platform contracts and execution scope before the user says “execute.” No production fixes, dependency upgrades, commits, pushes or new remote CI verification were performed in this audit. This is a completed audit milestone, not an implementation milestone.
+
 ## 2026-10-22: Perceptual color matching and protected eyes (current implementation)
 [DONE] Compared RGB and float-Lab K-means, with/without eye protection, in 36 photo/palette/seed cases plus six size/seed checks. Selected Lab plus eye protection as the default; kept Classic RGB and a protection toggle. See benchmarks/FACIAL_RESULTS.md for all measured tradeoffs.
 [DONE] Added bounded local human-eye detection, mild filtering within detected eyes, protected component merging, one-pixel eye outlines, and number exclusion from eye boxes. Added result metadata and explicit detection/unnumbered-detail notices. No new dependency or remote image upload.
