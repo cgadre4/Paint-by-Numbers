@@ -125,7 +125,7 @@ def quantize_image(image, k, seed=None, color_space="rgb"):
     return flat_labels.reshape(image.shape[:2]), centers
 
 
-def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=None, missing_mask=None, *, minimum_font_scale=None):
+def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=None, missing_mask=None, *, minimum_font_scale=None, overrides=None, include_geometry=False):
     """Keep every boundary and only draw numbers whose complete box fits inside."""
     height, width = labels.shape
     template = np.full((height, width, 3), 255, np.uint8)
@@ -154,6 +154,14 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=
             boundary[detail_mask] = thin[detail_mask]
             np.minimum(template, boundary[:, :, None], out=template)
         count, components, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=4)
+        manual = {}
+        for override in overrides or []:
+            ax, ay = override['anchor']
+            if labels[ay, ax] == color_idx:
+                component_id = int(components[ay, ax])
+                if component_id in manual:
+                    raise ValueError('Only one manual number is allowed per connected region.')
+                manual[component_id] = override['center']
         for component in range(1, count):
             x, y, w, h, _ = stats[component]
             region = (components[y:y+h, x:x+w] == component).astype(np.uint8)
@@ -162,7 +170,8 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=
             if detail_mask is not None:
                 number_region[detail_mask[y:y+h, x:x+w]] = 0
             found = False
-            for scale in np.linspace(max(font_scale, minimum_scale), minimum_scale, 8):
+            manual_center = manual.get(component)
+            for scale in ([minimum_scale] if manual_center is not None else np.linspace(max(font_scale, minimum_scale), minimum_scale, 8)):
                 bw, bh, _, padding = label_dimensions(color_idx, stroke_width, scale)
                 if bw > w or bh > h:
                     continue
@@ -172,24 +181,70 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=
                     continue
                 if distance is None:
                     distance = cv2.distanceTransform(np.pad(region, 1), cv2.DIST_L2, 5)[1:-1, 1:-1]
-                cy, cx = np.unravel_index(np.argmax(distance * fits), region.shape)
+                if manual_center is not None:
+                    cx, cy = manual_center[0] - x, manual_center[1] - y
+                    if not (0 <= cy < h and 0 <= cx < w and fits[cy, cx]):
+                        raise ValueError('The manual number box does not fit inside its region outside protection.')
+                else:
+                    cy, cx = np.unravel_index(np.argmax(distance * fits), region.shape)
                 left, top = int(x + cx - bw // 2), int(y + cy - bh // 2)
                 glyph = label_glyph(color_idx, float(scale))
                 gy, gx = top + padding, left + padding
                 ink = 255 - glyph[:, :, None]
                 target = template[gy:gy+glyph.shape[0], gx:gx+glyph.shape[1]]
                 np.minimum(target, ink, out=target)
-                placements.append({"id": color_idx + 1, "box": [left, top, bw, bh]})
+                placement = {"id": color_idx + 1, "box": [left, top, bw, bh]}
+                if include_geometry:
+                    placement.update(anchor=[int(x + cx), int(y + cy)], scale=float(scale))
+                placements.append(placement)
                 found = True
                 break
             if not found:
+                if manual_center is not None:
+                    raise ValueError('The manual number cannot fit at the minimum readable size.')
                 unlabelled += 1
                 if missing_mask is not None:
                     missing_mask[y:y+h, x:x+w][region.astype(bool)] = 255
     return template, placements, unlabelled
 
 
+def render_result(labels, centers, params, protection, boxes, face_count, *, reused=False, timings=None, overrides=None):
+    """Shared renderer for original processing and committed editor revisions."""
+    from canvas_size import canvas_metadata, painting_geometry
+    geometry = painting_geometry(labels.shape[1], labels.shape[0], params)
+    preview = centers[labels].astype(np.uint8)
+    palette = [{"id": i + 1, "hex": "#{:02x}{:02x}{:02x}".format(*map(int, color)),
+                "rgb": list(map(int, color))} for i, color in enumerate(centers[:, ::-1])]
+    missing_mask = np.zeros(labels.shape, np.uint8)
+    template, placements, missing = extract_contours_and_label(
+        labels, params['k'], geometry['stroke_width'], geometry['font_scale'], protection, missing_mask,
+        minimum_font_scale=geometry['minimum_font_scale'], overrides=overrides, include_geometry=True)
+    notices = []
+    if missing:
+        notices.append(f'{missing} region(s) could not fit a readable number. Try fewer colors; review fine details against the color preview before painting.')
+    if params.get('protect_eyes', True) and not boxes:
+        notices.append('No human eyes were detected; eye protection was not applied. Review small, angled, or obscured faces.')
+    elif boxes:
+        notices.append(f'Protected {len(boxes)} eye area(s), using thin outlines and keeping numbers outside them. Fine eye regions may remain unnumbered.')
+    physical = canvas_metadata(labels.shape[1], labels.shape[0], {**params, 'stroke_width': geometry['stroke_width']}, placements)
+    physical['sizing_mode'] = params.get('sizing_mode', 'pixels')
+    notices.extend(physical.pop('warnings'))
+    return {'processed_image': img_to_base64(preview), 'template_image': img_to_base64(template),
+            'label_map': img_to_base64(labels.astype(np.uint8)), 'palette': palette,
+            'image_dimensions': {'width': labels.shape[1], 'height': labels.shape[0]},
+            'parameters': params, 'label_placements': placements,
+            'eye_protection': {'enabled': params.get('protect_eyes', True), 'detected_faces': face_count, 'boxes': boxes},
+            'warnings': notices, 'canvas': physical,
+            'missing_regions': {'count': missing, 'area_percent': round(100 * np.count_nonzero(missing_mask) / missing_mask.size, 3),
+                                'mask': img_to_base64(missing_mask)},
+            'diagnostics': {'backend': 'CPU', 'threads': cv2.getNumThreads(), 'reused_color_analysis': reused,
+                            'render_geometry': geometry, 'stages_seconds': timings or {}}, 'schema_version': 2}
+
+
 def process_job_worker(job_id, shared_state, directory, params):
+    if params.get('_project_task'):
+        from projects import process_project_job
+        return process_project_job(job_id, shared_state, directory, params)
     root = Path(directory)
     timings = {}
     previous, stage = time.perf_counter(), None
@@ -208,22 +263,27 @@ def process_job_worker(job_id, shared_state, directory, params):
         enabled = params.get("protect_eyes", True)
         cache = root / "clusters.npz"
         cached = None
-        if cache.exists():
+        manual = params.get("manual_protection", [])
+        if cache.exists() and not manual:
             with Image.open(root / "input.png") as header:
                 size = header.size[::-1] if header.getexif().get(274) in {5, 6, 7, 8} else header.size
             expected = scaled_dimensions(*size, params["resolution_factor"])[::-1]
             cached = load_clusters(cache, params["k"], expected, eyes=True)
         reused = cached is not None
+        image = cv2.cvtColor(np.asarray(decode_image((root / "input.png").read_bytes(), params, resize=True)), cv2.COLOR_RGB2BGR)
         if reused:
             progress("Reusing color analysis", 40)
             raw_labels, centers, protection, boxes, face_count = cached
+            detected = boxes
         else:
-            image = cv2.cvtColor(np.asarray(decode_image((root / "input.png").read_bytes(), params, resize=True)), cv2.COLOR_RGB2BGR)
             enabled = params.get("protect_eyes", True)
             boxes, face_count = [], 0
             if enabled:
                 progress("Locating eyes", 15)
                 boxes, face_count = detect_eyes(image)
+            from editing import pixel_boxes
+            detected = boxes
+            boxes = boxes + pixel_boxes(image.shape, manual)
             protection = eye_mask(image.shape, boxes)
             progress("Applying bilateral filter", 20)
             smoothed = bilateral_filter(image, params["bilateral_diameter"], params["sigma_color"], params["sigma_color"])
@@ -236,42 +296,20 @@ def process_job_worker(job_id, shared_state, directory, params):
                 np.savez(stream, labels=raw_labels, centers=centers, protection=protection,
                          boxes=np.asarray(boxes, dtype=np.int32).reshape(-1, 4), face_count=face_count)
             pending_cache.replace(cache)
-        from canvas_size import canvas_metadata, painting_geometry
+        from canvas_size import painting_geometry
         geometry = painting_geometry(raw_labels.shape[1], raw_labels.shape[0], params)
         progress("Cleaning up small regions", 60)
         labels = cleanup_regions(raw_labels, params["k"], centers=centers,
                                  protected_mask=protection, **geometry)
-        progress("Building preview image", 80)
-        preview = centers[labels].astype(np.uint8)
-        palette = [{"id": i + 1, "hex": "#{:02x}{:02x}{:02x}".format(*map(int, color)),
-                    "rgb": list(map(int, color))} for i, color in enumerate(centers[:, ::-1])]
-        progress("Generating printable template", 90)
-        missing_mask = np.zeros(labels.shape, np.uint8)
-        template, placements, missing = extract_contours_and_label(
-            labels, params["k"], geometry["stroke_width"], geometry["font_scale"], protection, missing_mask,
-            minimum_font_scale=geometry["minimum_font_scale"])
-        notices = []
-        if missing:
-            reason = " outside protected eye detail" if boxes else ""
-            notices.append(f"{missing} region(s) could not fit a readable number{reason}. Try fewer colors; review fine details against the color preview before painting.")
-        if enabled and not boxes:
-            notices.append("No human eyes were detected; eye protection was not applied. Review small, angled, or obscured faces.")
-        elif boxes:
-            notices.append(f"Protected {len(boxes)} detected eye area(s), using thin outlines and keeping numbers outside them. Fine eye regions may remain unnumbered.")
-        physical = canvas_metadata(labels.shape[1], labels.shape[0], {**params, "stroke_width": geometry["stroke_width"]}, placements)
-        physical["sizing_mode"] = params.get("sizing_mode", "pixels")
-        notices.extend(physical.pop("warnings"))
-        progress("Encoding result", 95)
-        result = {"processed_image": img_to_base64(preview), "template_image": img_to_base64(template),
-                  "label_map": img_to_base64(labels.astype(np.uint8)), "palette": palette,
-                  "image_dimensions": {"width": labels.shape[1], "height": labels.shape[0]},
-                  "parameters": params, "label_placements": placements,
-                  "eye_protection": {"enabled": enabled, "detected_faces": face_count, "boxes": boxes},
-                  "warnings": notices, "canvas": physical,
-                  "missing_regions": {"count": missing, "area_percent": round(100 * np.count_nonzero(missing_mask) / missing_mask.size, 3),
-                                      "mask": img_to_base64(missing_mask)},
-                  "diagnostics": {"backend": "CPU", "threads": cv2.getNumThreads(), "reused_color_analysis": reused, "render_geometry": geometry, "stages_seconds": timings},
-                  "schema_version": 2}
+        progress("Rendering design", 80)
+        result = render_result(labels, centers, params, protection, boxes, face_count, reused=reused, timings=timings)
+        from project_io import pack_document
+        from settings import DEFAULTS
+        state = dict(source=image, raw=raw_labels.astype(np.uint8), labels=labels.astype(np.uint8), centers=centers,
+                     params={key: params[key] for key in DEFAULTS}, manual=manual, detected=detected,
+                     disabled=[], faces=face_count, overrides=[], title='Generated design')
+        document = dict(states=[state], cursor=0, original=(root / 'input.png').read_bytes(), pruned=0)
+        (root / 'document.pbn').write_bytes(pack_document(document, result=result))
         pending = root / "result.tmp"
         pending.write_text(json.dumps(result), encoding="utf-8")
         pending.replace(root / "result.json")
