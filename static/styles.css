@@ -72,6 +72,41 @@ canvas:active { cursor: grabbing; }
 .canvas-container[data-view=template] .canvas-viewer:not(.template-viewer) { display: none; }
 #printTemplate { display: none; }
 body.print-ready .source-viewer,body.print-ready .quantized-viewer { display: none; }
+.project-file-actions,.section-heading,.region-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.local-note { color: var(--muted); font-size: 12px; }
+.editor-toolbar { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 10px; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.tool-group { display: flex; gap: 5px; flex-wrap: wrap; }
+.tool-group button { min-height: 40px; }
+.tool-group button[aria-pressed=true] { background: #183e62; border-color: var(--accent); color: #d2e7ff; }
+.tool-help { color: var(--muted); margin: 0; font-size: 13px; }
+.protection-panel { border: 1px solid #9b80d9; border-radius: 10px; padding: 12px; background: #201b30; }
+.protection-panel h3,.section-heading h2 { margin: 0; }
+.protection-controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+.protection-controls > label { flex: 1; min-width: 130px; }
+.coordinate-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.box-coordinates { grid-template-columns: repeat(4,minmax(52px,1fr)); flex: 2; }
+.coordinate-grid label { font-size: 12px; color: var(--muted); }
+.coordinate-grid input { margin-top: 4px; min-width: 0; }
+.project-badge { font-size: 11px; border: 1px solid #c9a849; background: #32290d; color: #f2d275; border-radius: 20px; padding: 3px 9px; white-space: nowrap; }
+.project-badge.saved { border-color: #69ad7a; color: #c2f0cf; background: #12321e; }
+.editor-panel > label,.region-inspector > label { display: block; margin: 10px 0 6px; }
+.region-inspector { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
+.region-inspector > button { width: 100%; margin: 8px 0 12px; }
+.region-inspector > p { color: var(--muted); font-size: 13px; }
+.region-pagination { margin: 8px 0; font-size: 12px; }
+.region-pagination button { padding: 4px 8px; }
+.edit-history { padding-left: 24px; max-height: 180px; overflow-y: auto; font-size: 12px; }
+.edit-history li { padding: 4px; color: var(--muted); }
+.edit-history li.current { color: #d2e7ff; background: #183e62; border-radius: 4px; }
+.edit-history li.undone { text-decoration: line-through; }
+.project-sessions { padding-left: 18px; font-size: 12px; color: var(--muted); }
+.project-sessions li { margin: 8px 0; }
+.detected-protection { display: flex; flex-wrap: wrap; gap: 12px; }
+body[data-tool=protect] #sourceCanvas,body[data-tool=select] #templateCanvas,body[data-tool=select] #quantizedCanvas,
+body[data-tool=number] #templateCanvas { cursor: crosshair; }
+.selection-overlay { position: absolute; pointer-events: none; z-index: 2; border: 2px solid #c6a3ff; background: #ad82ff22; }
+body.project-open .parameters-section { display: none; }
+body.project-open #processBtn { display: none; }
 @media (max-width: 850px) {
     .app-container { display: flex; flex-direction: column; height: auto; overflow: visible; padding-bottom: 65px; }
     .control-sidebar { display: contents; }
@@ -81,12 +116,17 @@ body.print-ready .source-viewer,body.print-ready .quantized-viewer { display: no
     .parameters-section { order: 3; }
     .actions-section { order: 4; }
     .palette-section { order: 5; }
+    .editor-panel { order: 3; }
     .action-buttons { position: fixed; bottom: 0; left: 0; right: 0; padding: 10px 16px; background: var(--panel); z-index: 10; border-top: 1px solid var(--line); }
     .canvas-container { min-height: 260px; }
     .canvas-container[data-view=all] { flex-direction: column; }
     .canvas-container[data-view=all] .canvas-viewer { min-height: 240px; }
     .view-options { gap: 8px; }
     .view-options label { font-size: 12px; }
+    .editor-toolbar { position: sticky; top: 0; z-index: 5; }
+    .editor-toolbar .tool-group { flex: 1 1 100%; }
+    .editor-toolbar button { flex: 1; padding: 7px; font-size: 12px; }
+    .protection-controls > button { flex: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
