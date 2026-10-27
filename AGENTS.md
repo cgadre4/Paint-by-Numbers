@@ -27,6 +27,9 @@ Paint by #s converts a still image into a quantized preview, a numbered outline 
 | `exports.py` | Template/palette PNG and A4 PDF generation independent of frontend view state. |
 | `static/index.html` | Controls, stable DOM IDs, upload zone, three canvases, clean print image. |
 | `static/app.js` | UI state, revision ownership, sequential job polling, stale-response guards, rendering, downloads, highlighting, pan/zoom/reset. |
+| `editing.py`, `projects.py`, `project_io.py` | Pure region/number/protection operations, bounded project sessions and immutable revisions, versioned portable bundles. |
+| `static/editor.js`, `tests/test_editor_browser.py` | Finishing tools, protection gestures, history, project downloads/reopen and real-browser editing regressions. |
+| `tests/test_editing.py`, `tests/test_project_lifecycle.py` | Bundle validation, edit invariants, exact undo, independent project lifetime, quotas, cancellation and storage faults. |
 | `static/styles.css` | Existing theme, responsive layout, palette wrapping, print-ready and print styles. |
 | `tests/test_core.py` | API, image validation, output, geometry, and real spawned-worker lifecycle tests. |
 | `tests/test_browser.py` | Real Chromium/Chrome workflows, exports, delayed responses, network errors, reset/cancellation, and mobile layout. |
@@ -54,10 +57,10 @@ For a development server without automatic browser opening:
 uv run --locked python -m uvicorn server:app --host 127.0.0.1 --port 8000
 ```
 
-Windows: `run.bat` and `test.ps1` default `UV_PROJECT_ENVIRONMENT` to `%LOCALAPPDATA%\PaintByNumbers\venv-1.3` when it is unset. This avoids executing a virtual environment from a synced/network drive. For direct PowerShell commands:
+Windows: `run.bat` and `test.ps1` default `UV_PROJECT_ENVIRONMENT` to `%LOCALAPPDATA%\PaintByNumbers\venv-1.4` when it is unset. This avoids executing a virtual environment from a synced/network drive. For direct PowerShell commands:
 
 ```powershell
-$env:UV_PROJECT_ENVIRONMENT = Join-Path $env:LOCALAPPDATA 'PaintByNumbers\venv-1.3'
+$env:UV_PROJECT_ENVIRONMENT = Join-Path $env:LOCALAPPDATA 'PaintByNumbers\venv-1.4'
 ```
 
 Use `python -m pytest` and `python -m uvicorn` through uv rather than executable console wrappers; some Windows Application Control configurations block those wrappers. Never disable system security to run tests. Prefer the installed trusted runtime and a local environment. If Playwright's bundled Node runtime is blocked, `PLAYWRIGHT_NODEJS_PATH` can point to an installed permitted Node executable. Browser tests automatically use installed Chrome at the standard Windows path, otherwise installed Playwright Chromium; `PBN_BROWSER_CHANNEL` overrides the channel.
@@ -131,3 +134,16 @@ Reliability work and the first region-cleanup/image-benchmark iteration are impl
 - Validate optional color caches (expanded size, dimensions, numeric types/ranges, finite centers, eye boxes/mask agreement); rebuild invalid caches from source. Replace owned files atomically so rebuilding a hard-linked cache cannot modify another job's file.
 - `tiles.pdf` is a PDF-only export under the existing job export route and ownership/lease rules. Check page count, physical image matrices, overlap, crop/registration marks and calibration ruler; visually inspect actual rendered portrait/landscape exports. Never call a PDF vector output when it embeds a raster.
 - Run `python -m benchmarks.painting` through uv for physical-geometry changes, including a second size/seed with `--size 768 --seed 42 --widths 5 40`. Additional portraits are pinned in `benchmarks/portrait_sources.json`; `portrait_annotations.json` is evaluation-only. Preserve the original six-photo comparisons. Report human/animal cases separately, eye/nose/mouth metrics and print readability; the small mostly frontal corpus is not evidence of general face robustness.
+
+## Release 1.4 rules
+
+- Multipart `manual_protection` is optional JSON containing at most 128 normalized `[x,y,width,height]` rectangles on the oriented source. Omission preserves the previous API defaults. Manual masks work independently of automatic `protect_eyes`. Include them in cache provenance; do not reuse an incompatible automatic-only analysis. Effective eye boxes include manual areas; `enabled` still records the automatic-detection setting.
+- Editable projects have separate owned temporary directories, four-session capacity, a 512 MiB per-session and 1 GiB total commit/export-cache budget. Active sessions do not inherit finished-job expiry. They last until explicit close or server shutdown; final pagehide is best-effort, while back/forward-cached pages retain their session. Do not evict unsaved active sessions. The session list enables explicit abandoned-session cleanup. Crash recovery/autosave is not implemented.
+- Original processing retains a portable base document (normalized processing-resolution source, raw clusters, current map and original upload) inside the private job lifetime. Input handles and the temporary `input.png` are still removed. Keep this data local and out of Git. Project files omit the original upload by default; explicit inclusion preserves its original bytes/metadata.
+- Commands require a UUID request ID and expected monotonic project revision. One pending command per project; duplicate requests are idempotent, conflicting/stale requests return 409. Project opening, bundle parsing, regeneration and editing/rendering use the existing two spawned workers and timeout/cancellation boundary. Never decode untrusted project assets in API/event-loop code.
+- Region IDs identify four-connected components within one revision, independently of palette indices. Recolor only one component; merge only across a shared edge, then coalesce same-color connections. Finishing edits never rerun automatic cleanup. Reject any edit changing protected palette IDs. Keep manual numbers in untouched components, and disclose reset manual positions in changed components through history.
+- Protection drafts do not alter the committed design. Regeneration reapplies filtering/clustering/cleanup, may change the palette and resets finishing edits; retain the previous complete state for undo. Do not feed benchmark annotations into detection or processing.
+- Undo/redo uses stored, content-deduplicated checkpoints, not randomized replay. Retain at most 100 actions and 64 MiB of unique historical pixel arrays; report oldest-history pruning. A new edit discards redo. Guard every async request, decode, selection and commit by document/revision ownership. Keep the committed design during pending work and failed import/edit. Save/print/export only a committed revision.
+- `.pbn` bundle format and renderer are version 1, separate from process API schema 2. Bound uploads before parsing (128 MiB), expanded members (256 MiB), decoded unique images (96 MiB), manifest (2 MiB), entry count, history, image modes/shapes, palette indices, finite centers/settings, boxes and complete number geometry. Reject unexpected/duplicate/path/link/encrypted members and unsupported versions. Never extract arbitrary archive paths or load pickle. Reopen stored maps without detection/K-means; retain bounded undo/redo history and optional original.
+- Project assets are binary PNG endpoints; legacy job snapshots still contain data URLs. Metadata polling excludes base64 image payloads. Keep leases through revision reads and atomic exports; never delete in-use revisions. Preserve the direct renderer's two-field placement contract unless geometry metadata is explicitly requested.
+- Maintain keyboard alternatives for region selection and protection/number coordinates, visible focus, native text undo, pointer cancellation, mobile template focus, dirty-state warnings and clean print output. Run the editor API/lifecycle and real-browser tests as well as the full suite before publication.

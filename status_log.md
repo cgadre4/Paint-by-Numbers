@@ -1,5 +1,16 @@
 # Status Log - Paint-by-Numbers App
 
+## 2026-10-26: Version 1.4 manual finishing and portable projects
+[DONE] Milestone 1: introduced independent, bounded project ownership, revision-specific binary assets, reusable rendering and connected-region identity separate from palette indices.
+[DONE] Milestone 2: added normalized manual eye rectangles, detected-box overrides, upstream protection regeneration and complete undo checkpoints. Existing automatic-only cache provenance and protected-pixel behavior remain enforced.
+[DONE] Milestone 3: implemented one-component recolor, shared-edge merging/coalescing and validated manual number placement without automatic cleanup of finishing edits. Preserved complete number containment and physical readability.
+[DONE] Milestone 4: added exact undo/redo with content-deduplicated checkpoints, monotonic revisions, idempotent commands and visible history pruning (100 actions / 64 MiB). Failed/cancelled work preserves the committed design.
+[DONE] Milestone 5: implemented bounded format/renderer-v1 `.pbn` save/reopen, optional original inclusion and restoration after server restart. Archives are validated in owned workers without extraction or pickle; project reads and exports use leases and storage reservations.
+[DONE] Milestone 6: integrated explicit tools, keyboard alternatives, numeric protection/number controls, region lists, history, dirty-state warnings, reconnect/cancel and abandoned-session management. Reviewed desktop/mobile UI, real-photo eye crops and rendered PDF/PNG exports.
+[DONE] Final full suite: 182 passed in 92.76 s (20 browser workflows). Seven extra real-photo editor checks passed. Ruff, both JavaScript checks, whitespace and locked advisory scan passed; fresh runtime-only 1.4 workflow and graceful shutdown passed.
+[DONE] Completed six synthetic, 18 photo, 36 facial plus six second-size/seed cases, 120 physical pairs and six one/two-worker resource samples. Every quality metric matched the final 1.3 reports; no protected pixels changed in physical pairs. See benchmarks/RELEASE_1_4_RESULTS.md for observations and limits.
+Publication: final main merge/push and all five exact-SHA CI jobs are verified and reported after publication; no queued/in-progress run counts as success.
+
 ## 2026-10-26: Version 1.3 physical painting and tiled printing
 [DONE] Added bounded non-pickle cache/header validation and automatic rebuilding, including immutable hard-link replacement; reused contour scratch buffers. Added physical number-fit cleanup/rendering, centimetre/inch controls, A4/Letter orientation and exact-scale tiled PDFs with overlap, trim/alignment marks and a calibration ruler. Retained pixel mode and protected-eye invariants.
 [DONE] Final local suite: 140 passed; three extra real-photo browser workflows passed. Ruff, JavaScript syntax, whitespace and locked dependency advisory checks passed. Reviewed actual PDF/PNG output, 32-color palette, mobile UI and portrait crops.

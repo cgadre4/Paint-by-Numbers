@@ -14,6 +14,9 @@
 
             <section class="upload-section">
                 <h2>Upload Image</h2>
+                <div class="project-file-actions"><button id="openProjectBtn" type="button">Open project</button><span class="local-note">Local files only</span></div>
+                <input type="file" id="projectFileInput" accept=".pbn" hidden>
+                <details id="sessionDetails"><summary>Open project sessions</summary><p class="control-help">Sessions last until closed or the server stops. Download .pbn files to keep your work.</p><button id="refreshSessionsBtn" type="button">Refresh sessions</button><ul id="projectSessions" class="project-sessions"></ul></details>
                 <!-- File input is completely hidden; triggered programmatically -->
                 <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/bmp" style="display:none">
                 <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Choose an image">
@@ -22,6 +25,28 @@
                     </svg>
                     <p>Drop image here or <span class="browse-link" id="browseBtn">Browse files</span></p>
                 </div>
+            </section>
+
+            <section id="editorPanel" class="editor-panel hidden" aria-labelledby="editorHeading">
+                <div class="section-heading"><h2 id="editorHeading">Finish your painting</h2><span id="projectBadge" class="project-badge">Unsaved</span></div>
+                <p class="control-help">Select one region to change its color, merge it with a neighbor, or place its number. Every edit can be undone.</p>
+                <label for="regionList">Connected regions</label>
+                <select id="regionList" aria-label="Connected regions"></select>
+                <div class="region-pagination"><button id="previousRegions" type="button" aria-label="Previous regions">Previous</button><span id="regionPage"></span><button id="nextRegions" type="button" aria-label="Next regions">Next</button></div>
+                <label class="checkbox-label"><input id="onlyMissingRegions" type="checkbox"> Show unnumbered only</label>
+                <div id="regionInspector" class="region-inspector">
+                    <p id="regionDescription" role="status">Click a region in Colors or Template, or choose one above.</p>
+                    <label for="regionColor">Recolor using palette</label><select id="regionColor"></select>
+                    <button id="recolorRegionBtn" type="button">Apply color</button>
+                    <label for="mergeNeighbor">Merge into adjacent region</label><select id="mergeNeighbor"></select>
+                    <button id="mergeRegionBtn" type="button">Merge into neighbor</button>
+                    <div class="coordinate-grid"><label for="numberX">Number X (px)<input id="numberX" type="number" min="0" step="1"></label><label for="numberY">Number Y (px)<input id="numberY" type="number" min="0" step="1"></label></div>
+                    <button id="placeNumberBtn" type="button">Place readable number</button>
+                </div>
+                <details id="historyDetails"><summary>History <span id="historyCount"></span></summary><ol id="editHistory" class="edit-history"></ol><p id="historyNote" class="control-help"></p></details>
+                <label class="checkbox-label"><input id="includeOriginal" type="checkbox"> Include original image in project file</label>
+                <p class="control-help">Saved projects include the source at processing resolution and undo history. Include the original to keep the full upload too.</p>
+                <button id="closeProjectBtn" type="button" class="btn-text">Close project</button>
             </section>
 
             <section class="parameters-section">
@@ -109,6 +134,7 @@
                 </div>
 
                 <button id="resetBtn" class="btn-text">Reset</button>
+                <button id="finishDesignBtn" type="button" class="btn-outline hidden">Finish this design</button>
                 <div id="resultsContainer" class="hidden">
                     <div class="export-group">
                         <h3>Download Template</h3>
@@ -150,6 +176,21 @@
                     </svg>
                 </div>
             </header>
+
+            <div class="editor-toolbar" aria-label="Painting tools">
+                <div class="tool-group" role="group" aria-label="Tool"><button id="panTool" type="button" aria-pressed="true">Pan</button><button id="protectTool" type="button" aria-pressed="false">Protect eyes</button><button id="selectTool" type="button" aria-pressed="false" disabled>Select region</button><button id="numberTool" type="button" aria-pressed="false" disabled>Place number</button></div>
+                <div class="tool-group" role="group" aria-label="Project actions"><button id="undoEditBtn" type="button" disabled title="Undo (Ctrl+Z)">Undo</button><button id="redoEditBtn" type="button" disabled title="Redo (Ctrl+Shift+Z)">Redo</button><button id="saveProjectBtn" type="button" class="btn-primary" disabled>Save project</button><button id="refreshProjectBtn" type="button" class="hidden">Reconnect</button><button id="cancelEditBtn" type="button" class="hidden">Cancel operation</button></div>
+            </div>
+            <p id="toolHelp" class="tool-help">Pan to inspect. Protect eyes before processing, or finish a generated design to edit regions.</p>
+            <section id="protectionPanel" class="protection-panel hidden" aria-labelledby="protectionHeading">
+                <div class="section-heading"><h3 id="protectionHeading">Eye protection</h3><span class="local-note">Draw on the source image</span></div>
+                <p class="control-help">Drag a rectangle around an eye, or enter its bounds below. Protection keeps quantized eye detail; it cannot restore detail lost to resolution or palette size.</p>
+                <div class="protection-controls"><label for="protectionList">Eye area<select id="protectionList"><option value="new">New rectangle</option></select></label>
+                <div class="coordinate-grid box-coordinates"><label for="eyeX">X (%)<input id="eyeX" type="number" min="0" max="100" step="any" value="0"></label><label for="eyeY">Y (%)<input id="eyeY" type="number" min="0" max="100" step="any" value="0"></label><label for="eyeWidth">Width (%)<input id="eyeWidth" type="number" min="0.1" max="100" step="any" value="10"></label><label for="eyeHeight">Height (%)<input id="eyeHeight" type="number" min="0.1" max="100" step="any" value="10"></label></div>
+                <button id="applyEyeBoxBtn" type="button">Add rectangle</button><button id="deleteEyeBoxBtn" type="button" disabled>Remove rectangle</button><button id="regenerateProtectionBtn" type="button" class="btn-primary hidden">Regenerate with protection</button></div>
+                <p id="protectionNotice" role="status" class="control-help">Rectangles will be applied when you process the image.</p>
+                <div id="detectedProtectionList" class="detected-protection"></div>
+            </section>
 
             <div class="view-options">
                 <label for="viewChoice">Show</label><select id="viewChoice"><option value="all">Compare all</option><option value="source">Source</option><option value="quantized">Colors</option><option value="template">Template</option></select>
@@ -208,6 +249,7 @@
     </div>
 
     <img id="printTemplate" alt="Numbered paint-by-numbers template">
+    <script src="editor.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

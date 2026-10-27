@@ -45,6 +45,7 @@
             el.processBtnText.textContent = 'Process Image';
             el.progressFill.style.width = '0%';
         }
+        editor?.updateControls();
     }
     function transform() {
         el.zoomSlider.value = state.zoom;
@@ -58,6 +59,8 @@
         transform();
     }
     function clearResults() {
+        el.finishDesignBtn.classList.add('hidden');
+        state.completedJob = null;
         state.result = state.template = state.labels = state.selected = null;
         el.resultsContainer.classList.add('hidden');
         el.printTemplate.removeAttribute('src');
@@ -91,7 +94,9 @@
                 else if (Array.isArray(body.detail)) detail = body.detail.map(error =>
                     `${error.loc?.at(-1) || 'Input'}: ${error.msg}`).join('; ');
             } catch (_) { /* Keep a useful message for a non-JSON server response. */ }
-            throw new Error(detail);
+            const error = new Error(detail);
+            error.status = response.status;
+            throw error;
         }
         return response;
     }
@@ -145,6 +150,7 @@
         if (!/\.(png|jpe?g|webp|bmp)$/i.test(file.name) && !['image/png', 'image/jpeg', 'image/webp', 'image/bmp'].includes(file.type)) {
             return message('Use a PNG, JPEG, WebP, or BMP image.', 'error');
         }
+        if (!editor.prepareNewSource()) return;
         const revision = invalidate();
         state.source = state.image = null;
         el.sourceCanvas.width = el.sourceCanvas.height = 1;
@@ -157,6 +163,7 @@
             if (image.naturalWidth * image.naturalHeight > 40000000) throw new Error('The source image must contain at most 40 million pixels.');
             state.source = file; state.image = {naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight};
             draw(el.sourceCanvas, image);
+            editor.captureSource();
             el.sourcePlaceholder.classList.add('hidden');
             message('Image loaded. Choose settings and process it.', 'success');
         } catch (error) {
@@ -167,7 +174,7 @@
         }
     }
     async function processImage() {
-        if (!state.source || state.active || !state.configured) return;
+        if (!state.source || state.active || state.editorBusy || editor.project || !state.configured) return;
         if (!el.canvasWidth.reportValidity()) return;
         const width = Math.round(state.image.naturalWidth * state.parameters.resolution_factor);
         const height = Math.round(state.image.naturalHeight * state.parameters.resolution_factor);
@@ -184,6 +191,7 @@
         const form = new FormData();
         form.append('file', state.source, state.source.name);
         form.append('request_id', run.requestId);
+        form.append('manual_protection', JSON.stringify(editor.manual));
         for (const [key, value] of Object.entries(state.parameters)) form.append(key, String(value));
         try {
             const response = await request('/api/process/start', {method: 'POST', body: form});
@@ -198,6 +206,40 @@
             state.active = null; updateControls();
             message(error.message, 'error');
         }
+    }
+    function presentResult(result, preview, template, labels, missing, exportBase) {
+        const labelCanvas = document.createElement('canvas');
+        draw(labelCanvas, labels);
+        const rgba = labelCanvas.getContext('2d').getImageData(0, 0, labels.naturalWidth, labels.naturalHeight).data;
+        state.labels = new Uint8Array(rgba.length / 4);
+        for (let i = 0; i < state.labels.length; i++) state.labels[i] = rgba[i * 4];
+        draw(labelCanvas, missing);
+        const missingRGBA = labelCanvas.getContext('2d').getImageData(0, 0, missing.naturalWidth, missing.naturalHeight).data;
+        state.missing = new Uint8Array(state.labels.length);
+        for (let i = 0; i < state.missing.length; i++) state.missing[i] = missingRGBA[i * 4];
+        labelCanvas.width = labelCanvas.height = 1;
+        state.result = result; state.template = template;
+        el.canvasInfo.textContent = result.canvas ? `Canvas: ${(result.canvas.width_mm / 10).toFixed(1)} × ${(result.canvas.height_mm / 10).toFixed(1)} cm; ${result.canvas.effective_dpi} ppi. ${result.canvas.custom ? 'Custom PDF: print at 100%, without Fit to page.' : `PDF fits ${result.parameters.paper_size.toUpperCase()} with 10 mm margins.`}` : '';
+        draw(el.quantizedCanvas, preview); draw(el.templateCanvas, template);
+        transform();
+        el.quantizedPlaceholder.classList.add('hidden');
+        el.templatePlaceholder.classList.add('hidden');
+        renderPalette(result.palette);
+        for (const kind of ['template', 'palette']) {
+            for (const format of ['png', 'pdf']) {
+                el[`download${kind[0].toUpperCase() + kind.slice(1)}${format.toUpperCase()}`].href =
+                    `${exportBase}/${kind}.${format}`;
+            }
+        }
+        el.downloadTilesPDF.href = `${exportBase}/tiles.pdf`;
+        let printStyle = document.getElementById('printPaperStyle');
+        if (!printStyle) { printStyle = document.createElement('style'); printStyle.id = 'printPaperStyle'; document.head.append(printStyle); }
+        const paper = result.parameters.paper_size === 'letter' ? 'letter' : 'A4';
+        const orientation = result.image_dimensions.width > result.image_dimensions.height ? 'landscape' : 'portrait';
+        printStyle.textContent = `@media print { @page { size: ${paper} ${orientation}; margin: 10mm; } #printTemplate { max-width: 100%; max-height: ${paper === 'letter' ? (orientation === 'landscape' ? 195.9 : 259.4) : (orientation === 'landscape' ? 190 : 277)}mm; } }`;
+        el.printTemplate.src = result.template_image;
+        el.resultsContainer.classList.remove('hidden');
+        el.finishDesignBtn.classList.toggle('hidden', Boolean(editor.project));
     }
     async function poll(run) {
         if (!isCurrent(run)) return;
@@ -220,37 +262,8 @@
                     loadImage(result.processed_image), loadImage(result.template_image), loadImage(result.label_map), loadImage(result.missing_regions.mask)
                 ]);
                 if (!isCurrent(run)) return;
-                const labelCanvas = document.createElement('canvas');
-                draw(labelCanvas, labels);
-                const rgba = labelCanvas.getContext('2d').getImageData(0, 0, labels.naturalWidth, labels.naturalHeight).data;
-                state.labels = new Uint8Array(rgba.length / 4);
-                for (let i = 0; i < state.labels.length; i++) state.labels[i] = rgba[i * 4];
-                draw(labelCanvas, missing);
-                const missingRGBA = labelCanvas.getContext('2d').getImageData(0, 0, missing.naturalWidth, missing.naturalHeight).data;
-                state.missing = new Uint8Array(state.labels.length);
-                for (let i = 0; i < state.missing.length; i++) state.missing[i] = missingRGBA[i * 4];
-                labelCanvas.width = labelCanvas.height = 1;
-                state.result = result; state.template = template;
-                el.canvasInfo.textContent = result.canvas ? `Canvas: ${(result.canvas.width_mm / 10).toFixed(1)} × ${(result.canvas.height_mm / 10).toFixed(1)} cm; ${result.canvas.effective_dpi} ppi. ${result.canvas.custom ? 'Custom PDF: print at 100%, without Fit to page.' : `PDF fits ${result.parameters.paper_size.toUpperCase()} with 10 mm margins.`}` : '';
-                draw(el.quantizedCanvas, preview); draw(el.templateCanvas, template);
-                transform();
-                el.quantizedPlaceholder.classList.add('hidden');
-                el.templatePlaceholder.classList.add('hidden');
-                renderPalette(result.palette);
-                for (const kind of ['template', 'palette']) {
-                    for (const format of ['png', 'pdf']) {
-                        el[`download${kind[0].toUpperCase() + kind.slice(1)}${format.toUpperCase()}`].href =
-                            `/api/process/export/${run.jobId}/${kind}.${format}`;
-                    }
-                }
-                el.downloadTilesPDF.href = `/api/process/export/${run.jobId}/tiles.pdf`;
-                let printStyle = document.getElementById('printPaperStyle');
-                if (!printStyle) { printStyle = document.createElement('style'); printStyle.id = 'printPaperStyle'; document.head.append(printStyle); }
-                const paper = result.parameters.paper_size === 'letter' ? 'letter' : 'A4';
-                const orientation = result.image_dimensions.width > result.image_dimensions.height ? 'landscape' : 'portrait';
-                printStyle.textContent = `@media print { @page { size: ${paper} ${orientation}; margin: 10mm; } #printTemplate { max-width: 100%; max-height: ${paper === 'letter' ? (orientation === 'landscape' ? 195.9 : 259.4) : (orientation === 'landscape' ? 190 : 277)}mm; } }`;
-                el.printTemplate.src = result.template_image;
-                el.resultsContainer.classList.remove('hidden');
+                presentResult(result, preview, template, labels, missing, `/api/process/export/${run.jobId}`);
+                state.completedJob = run.jobId;
                 state.active = null; updateControls();
                 message(['Processing complete.', ...(result.warnings || [])].join(' '), result.warnings?.length ? 'info' : 'success');
                 return;
@@ -310,7 +323,7 @@
             overlay.strokeStyle = '#b000cc'; overlay.lineWidth = 2;
             for (const [x,y,w,h] of state.result.eye_protection.boxes) overlay.strokeRect(x,y,w,h);
         }
-        if (!selected && !el.showMissing.checked) return;
+        if (!selected && !el.showMissing.checked) { editor.overlaySelection(); return; }
         const context = el.templateCanvas.getContext('2d');
         const image = context.getImageData(0, 0, el.templateCanvas.width, el.templateCanvas.height);
         for (let offset = 0; offset < image.data.length; offset += 4) {
@@ -329,9 +342,10 @@
             }
         }
         context.putImageData(image, 0, 0);
+        editor.overlaySelection();
     }
     function resetAll() {
-        if (!state.configured) return;
+        if (!state.configured || !editor.prepareNewSource()) return;
         invalidate();
         state.parameters = {...defaults}; state.source = state.image = null;
         el.fileInput.value = '';
@@ -359,6 +373,7 @@
             if (revision === state.revision) message(`Download failed: ${error.message}`, 'error');
         }
     }
+    const editor = window.createPaintingEditor({state, el, message, request, loadImage, draw, transform, resetView, updateControls, presentResult, resetAll, clearResults});
     el.dropzone.addEventListener('click', () => el.fileInput.click());
     el.dropzone.addEventListener('keydown', event => {
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); el.fileInput.click(); }
@@ -448,7 +463,7 @@
             transform();
         }, {passive: false});
         canvas.addEventListener('pointerdown', event => {
-            if (event.button !== 0 || !state.source) return;
+            if (event.button !== 0 || !state.source || editor.tool !== 'pan') return;
             drag = {id: event.pointerId, x: event.clientX, y: event.clientY, panX: state.panX, panY: state.panY};
             canvas.setPointerCapture(event.pointerId);
         });

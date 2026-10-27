@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import math
+import json
 import tempfile
 from contextlib import asynccontextmanager, suppress
 from multiprocessing import freeze_support
@@ -14,10 +15,14 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
+from pydantic import BaseModel, ConfigDict, StrictInt
 
 from jobs import JobCapacityError, JobManager, JobNotFound
 from pipeline import MAX_UPLOAD_BYTES
 from settings import DEFAULTS, RANGES, PRESETS
+from editing import rectangles
+from project_io import MAX_BUNDLE
+from projects import ProjectManager, RevisionConflict
 
 logger = logging.getLogger(__name__)
 
@@ -55,12 +60,15 @@ class UploadLimitMiddleware:
         self.active = 0
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] != "http" or scope.get("path") != "/api/process/start":
+        path = scope.get('path','')
+        limited = path == '/api/process/start' or path == '/api/projects/open' or (path.startswith('/api/projects') and scope.get('method') == 'POST')
+        if scope["type"] != "http" or not limited:
             return await self.app(scope, receive, send)
         async def reject(status, detail):
             await Response('{"detail":"' + detail + '"}', status_code=status,
                            media_type="application/json")(scope, receive, send)
-        limit = MAX_UPLOAD_BYTES + 256 * 1024
+        limit = MAX_BUNDLE + 256 * 1024 if path == '/api/projects/open' else (
+            MAX_UPLOAD_BYTES + 256 * 1024 if path == '/api/process/start' else 64 * 1024)
         try:
             declared = int(dict(scope.get("headers", [])).get(b"content-length", b"0"))
         except ValueError:
@@ -68,7 +76,7 @@ class UploadLimitMiddleware:
         if declared < 0:
             return await reject(400, "Invalid Content-Length")
         if declared > limit:
-            return await reject(413, "Images must be 20 MB or smaller.")
+            return await reject(413, "Request exceeds the upload limit.")
         if self.active >= self.max_uploads:
             return await reject(429, "Upload slots are busy. Try again shortly.")
         self.active += 1  # No await between admission and increment.
@@ -84,7 +92,7 @@ class UploadLimitMiddleware:
                             chunk = message.get("body", b"")
                             size += len(chunk)
                             if size > limit:
-                                return await reject(413, "Images must be 20 MB or smaller.")
+                                return await reject(413, "Request exceeds the upload limit.")
                             await run_in_threadpool(spool.write, chunk)
                             if not message.get("more_body", False):
                                 break
@@ -114,6 +122,12 @@ async def lifespan(application):
     jobs = JobManager()
     application.state.jobs = jobs
     api_app.state.jobs = jobs
+    try:
+        projects = ProjectManager(jobs)
+    except Exception:
+        await run_in_threadpool(jobs.close)
+        raise
+    api_app.state.projects = application.state.projects = projects
     # Bound concurrent decodes as well as worker processes.
     api_app.state.upload_lock = asyncio.Semaphore(2)
     async def reaper():
@@ -130,7 +144,10 @@ async def lifespan(application):
         cleanup.cancel()
         with suppress(asyncio.CancelledError):
             await cleanup
-        await run_in_threadpool(jobs.close)
+        try:
+            await run_in_threadpool(projects.close)
+        finally:
+            await run_in_threadpool(jobs.close)
 
 
 api_app = FastAPI()
@@ -168,6 +185,7 @@ async def start_processing(
     sizing_mode: Literal["physical", "pixels"] = Form("physical"),
     paper_size: Literal["a4", "letter"] = Form("a4"),
     request_id: UUID | None = Form(None),
+    manual_protection: str = Form('[]'),
 ):
     params = dict(k=k, resolution_factor=resolution_factor, bilateral_diameter=bilateral_diameter,
                   sigma_color=sigma_color, area_min=area_min, stroke_width=stroke_width, font_scale=font_scale)
@@ -176,10 +194,16 @@ async def start_processing(
     if not math.isfinite(canvas_width_cm) or 0 < canvas_width_cm < 5:
         raise HTTPException(422, "Canvas width must be 0 (fit selected paper) or 5-200 cm.")
     form = await request.form()
-    allowed = set(params) | {"file", "color_space", "protect_eyes", "canvas_width_cm", "request_id", "sizing_mode", "paper_size"}
+    allowed = set(params) | {"file", "color_space", "protect_eyes", "canvas_width_cm", "request_id", "sizing_mode", "paper_size", "manual_protection"}
     if set(form) - allowed:
         raise HTTPException(422, "Unknown processing option.")
     params.update(color_space=color_space, protect_eyes=(protect_eyes == "true"), canvas_width_cm=canvas_width_cm, sizing_mode=sizing_mode, paper_size=paper_size)
+    try:
+        manual = rectangles(json.loads(manual_protection))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if manual:
+        params['manual_protection'] = manual
     try:
         async with api_app.state.upload_lock:
             data = await file.read(MAX_UPLOAD_BYTES + 1)
@@ -232,6 +256,157 @@ def export_result(job_id: UUID, kind: Literal["template", "palette", "tiles"], f
     return Response(data, media_type="application/pdf" if format_ == "pdf" else "image/png",
                     headers={"Content-Disposition": f'attachment; filename="{kind}.{format_}"',
                              "Cache-Control": "no-store"})
+
+
+class ProjectCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    job_id: UUID
+    request_id: UUID
+
+
+class ProjectCommand(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    expected_revision: StrictInt
+    request_id: UUID
+    command: dict
+
+
+def project_call(function, *args):
+    try:
+        return function(*args)
+    except JobNotFound as exc:
+        raise HTTPException(404, 'Project or revision not found. Reopen your saved project.') from exc
+    except RevisionConflict as exc:
+        raise HTTPException(409,str(exc)) from exc
+    except JobCapacityError as exc:
+        raise HTTPException(429,str(exc),headers={'Retry-After':'2'}) from exc
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from exc
+
+
+@api_app.post('/projects',status_code=202)
+def create_project(body: ProjectCreate):
+    return project_call(api_app.state.projects.from_job,str(body.job_id),str(body.request_id))
+
+
+@api_app.get('/projects')
+def list_project_sessions():
+    return api_app.state.projects.sessions()
+
+
+@api_app.post('/projects/open',status_code=202)
+async def open_project(file: UploadFile = File(...), request_id: UUID = Form(...)):
+    try:
+        data = await file.read(MAX_BUNDLE+1)
+        if len(data) > MAX_BUNDLE:
+            raise HTTPException(413,'Project files must be 128 MiB or smaller.')
+        return await run_in_threadpool(project_call,api_app.state.projects.create,data,str(request_id))
+    finally:
+        await file.close()
+
+
+@api_app.get('/projects/{project_id}')
+def get_project(project_id: UUID):
+    return project_call(api_app.state.projects.snapshot,str(project_id))
+
+
+@api_app.post('/projects/{project_id}/commands',status_code=202)
+def project_command(project_id: UUID,body: ProjectCommand):
+    return project_call(api_app.state.projects.command,str(project_id),body.expected_revision,str(body.request_id),body.command)
+
+
+@api_app.post('/projects/{project_id}/cancel')
+def cancel_project_operation(project_id: UUID):
+    return project_call(api_app.state.projects.cancel,str(project_id))
+
+
+@api_app.delete('/projects/{project_id}')
+def close_project(project_id: UUID):
+    project_call(api_app.state.projects.close_project,str(project_id))
+    return {'status':'Closed'}
+
+
+@api_app.post('/projects/{project_id}/close')
+def close_project_beacon(project_id: UUID):
+    return close_project(project_id)
+
+
+@api_app.get('/projects/{project_id}/revisions/{revision}/assets/{name}.png')
+def project_asset(project_id: UUID,revision: int,name: Literal['source','preview','template','labels','missing']):
+    def read():
+        with api_app.state.projects.lease(str(project_id),revision) as path:
+            return (path/(name+'.png')).read_bytes()
+    return Response(project_call(read),media_type='image/png',headers={'Cache-Control':'no-store'})
+
+
+@api_app.get('/projects/{project_id}/revisions/{revision}/export/{kind}.{format_}')
+def project_export(project_id: UUID,revision: int,kind: Literal['template','palette','tiles','project'],
+                   format_: Literal['png','pdf','pbn'],include_original: bool = False):
+    def read():
+        from exports import make_export
+        with api_app.state.projects.lease(str(project_id),revision) as path:
+            if kind == 'project' and format_ == 'pbn':
+                return (path/('document.pbn' if include_original else 'portable.pbn')).read_bytes()
+            if kind == 'project' or format_ == 'pbn' or kind == 'tiles' and format_ != 'pdf':
+                raise ValueError('Unsupported export.')
+            target = path/f'{kind}.{format_}'
+            if target.exists():
+                return target.read_bytes()
+            result = json.loads((path/'result.json').read_text(encoding='utf-8'))
+            data = make_export(result,kind,format_)
+            api_app.state.projects.cache_export(str(project_id),target,data)
+            return data
+    data = project_call(read)
+    media = {'png':'image/png','pdf':'application/pdf','pbn':'application/octet-stream'}[format_]
+    return Response(data,media_type=media,headers={'Content-Disposition':f'attachment; filename="{kind}.{format_}"','Cache-Control':'no-store'})
+
+
+@api_app.get('/projects/{project_id}/revisions/{revision}/regions')
+def project_regions(project_id: UUID,revision: int,region: int | None = None,x: int | None = None,y: int | None = None,
+                    offset: int = 0,missing: bool = False):
+    def read():
+        import numpy as np
+        from project_io import png_bytes
+        from facial import eye_mask
+        from base64 import b64encode
+        with api_app.state.projects.lease(str(project_id),revision) as path:
+            stats = np.load(path/'stats.npy',allow_pickle=False)
+            colors = np.load(path/'colors.npy',allow_pickle=False)
+            numbered = np.load(path/'numbered.npy',allow_pickle=False)
+            if region is None and x is None and y is None:
+                indices = np.flatnonzero(~numbered) if missing else np.arange(len(stats))
+                if not 0 <= offset <= len(indices):
+                    raise ValueError('Invalid region list offset.')
+                return {'total':len(indices),'items':[{'region':int(i),'color':int(colors[i])+1,'area':int(stats[i,4]),'numbered':bool(numbered[i])}
+                                                     for i in indices[offset:offset+100]]}
+            regions = np.load(path/'regions.npy',allow_pickle=False)
+            if region is None:
+                if x is None or y is None or not 0 <= x < regions.shape[1] or not 0 <= y < regions.shape[0]:
+                    raise ValueError('Select a point inside the image.')
+                selected = int(regions[y,x])
+            else:
+                if not 0 <= region < len(stats):
+                    raise ValueError('Invalid region selection.')
+                selected = region
+            left,top,w,h,area = map(int,stats[selected])
+            selected_mask = regions[top:top+h,left:left+w] == selected
+            neighborhood = set()
+            ys0,xs0 = np.nonzero(selected_mask)
+            # Read a one-pixel halo, using four-connected contact only.
+            for dx,dy in ((-1,0),(1,0),(0,-1),(0,1)):
+                xs,ys = xs0+left+dx,ys0+top+dy
+                valid = (xs>=0)&(ys>=0)&(xs<regions.shape[1])&(ys<regions.shape[0])
+                neighborhood.update(np.unique(regions[ys[valid],xs[valid]]).tolist())
+            neighborhood.discard(selected)
+            metadata = json.loads((path/'metadata.json').read_text(encoding='utf-8'))
+            mask = eye_mask(regions.shape,metadata['eye_protection']['boxes'])
+            overlay = np.zeros((h,w,4),np.uint8)
+            overlay[selected_mask] = [255,170,60,130]
+            return {'region':selected,'color':int(colors[selected])+1,'area':area,'box':[left,top,w,h],
+                    'numbered':bool(numbered[selected]),'protected':bool(mask[top:top+h,left:left+w][selected_mask].any()),
+                    'neighbors':[{'region':int(i),'color':int(colors[i])+1,'area':int(stats[i,4])} for i in sorted(neighborhood)],
+                    'mask':'data:image/png;base64,'+b64encode(png_bytes(overlay)).decode()}
+    return project_call(read)
 
 
 app.mount("/api", api_app)
