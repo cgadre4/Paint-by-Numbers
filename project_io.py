@@ -48,6 +48,10 @@ def strict_json(data):
 
 
 def validate_params(params):
+    if isinstance(params, dict):
+        params.setdefault(
+            "eye_detail", "fine"
+        )  # Existing format-v1 projects keep their original filtering.
     if not isinstance(params, dict) or set(params) != set(DEFAULTS):
         raise ValueError("Unsupported project settings.")
     for key, (lo, hi) in RANGES.items():
@@ -66,6 +70,7 @@ def validate_params(params):
             raise ValueError("Expected integer setting: " + key)
     if (
         params["color_space"] not in {"lab", "rgb"}
+        or params["eye_detail"] not in {"fine", "balanced"}
         or type(params["protect_eyes"]) is not bool
         or params["paper_size"] not in {"a4", "letter"}
         or params["sizing_mode"] not in {"physical", "pixels"}

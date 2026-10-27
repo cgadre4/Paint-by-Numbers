@@ -24,7 +24,7 @@ def cleanup_sessions(page):
 
 
 def open_document(page, data=None):
-    expect(page.locator('#openProjectBtn')).to_be_enabled()
+    expect(page.locator("#openProjectBtn")).to_be_enabled()
     page.locator("#projectFileInput").set_input_files(
         {
             "name": "test.pbn",
@@ -300,3 +300,26 @@ def test_navigation_closes_session_and_sessions_list_can_close_abandoned_project
     page.once("dialog", lambda dialog: dialog.accept())
     page.locator("#projectSessions button").click()
     expect(page.locator("#projectSessions")).to_have_text("No projects are open.")
+
+
+def test_eye_detail_draft_regeneration_undo_and_save(page):
+    open_document(page)
+    page.locator("#protectTool").click()
+    page.locator("#projectEyeDetail").select_option("balanced")
+    expect(page.locator("#saveProjectBtn")).to_be_disabled()
+    page.locator("#undoEditBtn").click()
+    expect(page.locator("#projectEyeDetail")).to_have_value("fine")
+    page.locator("#redoEditBtn").click()
+    expect(page.locator("#projectEyeDetail")).to_have_value("balanced")
+    page.locator("#regenerateProtectionBtn").click()
+    wait_revision(page, 2)
+    assert project_state(page)["result"]["parameters"]["eye_detail"] == "balanced"
+    page.locator("#undoEditBtn").click()
+    wait_revision(page, 3)
+    expect(page.locator("#projectEyeDetail")).to_have_value("fine")
+    page.locator("#redoEditBtn").click()
+    wait_revision(page, 4)
+    with page.expect_download() as download:
+        page.locator("#saveProjectBtn").click()
+    saved = unpack_document(Path(download.value.path()).read_bytes())
+    assert saved["states"][saved["cursor"]]["params"]["eye_detail"] == "balanced"

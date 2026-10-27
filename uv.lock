@@ -467,7 +467,7 @@ wheels = [
 
 [[package]]
 name = "paint-by-numbers"
-version = "1.4.0"
+version = "1.4.1"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },

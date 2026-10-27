@@ -95,7 +95,7 @@ def run_case(item, source, params, output, annotation=None, seed=12345):
         space, preserve=METHODS[name]
         pixels=filtered.copy()
         if preserve:
-            pixels=preserve_eye_pixels(source,filtered,protection)
+            pixels=preserve_eye_pixels(source,filtered,protection,detail=params.get('eye_detail','fine'))
         started=time.perf_counter()
         raw,centers=(facial_baseline.quantize_image(pixels,params['k'],seed) if space == 'rgb'
                      else quantize_image(pixels,params['k'],seed,space))
@@ -135,7 +135,7 @@ def write_report(output, report):
     output=Path(output)
     (output/'report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     lines=['# Facial-detail benchmark', '',
-           f"Baseline `{report['baseline_commit']}`; maximum side {report['size']} px; seeds {report['seeds']}; CPU OpenCV {report['opencv']} with two threads.", '',
+           f"Baseline `{report['baseline_commit']}`; maximum side {report['size']} px; seeds {report['seeds']}; CPU OpenCV {report['opencv']} with two threads. Eye preprocessing: {report.get('eye_detail','fine')}.", '',
            'Common reference: original resized source. Delta E 76 is Euclidean float-Lab error (lower is better). Eye F1 matches Canny 60/120 edges with one-pixel tolerance inside fixed, manually checked regions; it is a proxy, not a semantic accuracy score. Human and cat results must be reported separately: the detector only protects human eyes.', '',
            '| Photo / K / seed | Method | Source DE76 | Eye DE76 | Eye edge F1 % | Unnumbered | Unnumbered area % |',
            '| --- | --- | ---: | ---: | ---: | ---: | ---: |']
@@ -155,6 +155,7 @@ def main():
     parser.add_argument('--seeds',type=int,nargs='+',default=[12345,42])
     parser.add_argument('--size',type=int,default=512)
     parser.add_argument('--output',type=Path,default=Path('.local/facial-benchmark'))
+    parser.add_argument('--eye-detail',choices=['fine','balanced'],default='fine')
     args=parser.parse_args()
     if not 32<=args.size<=2000 or any(not 3<=k<=32 for k in args.colors) or any(not 0<=s<2**31 for s in args.seeds):
         parser.error('Use size 32-2000, colors 3-32, seeds 0 through 2^31-1.')
@@ -168,10 +169,10 @@ def main():
         for k in args.colors:
             source=load_photo(data,args.size,k)
             for seed in args.seeds:
-                case=run_case(item,source,dict(DEFAULTS,k=k),args.output,annotations.get(item['id']),seed)
+                case=run_case(item,source,dict(DEFAULTS,k=k,eye_detail=args.eye_detail),args.output,annotations.get(item['id']),seed)
                 cases.append(case)
                 print(f"{item['id']} k={k} seed={seed}: DE76 " + ', '.join(f"{name}={m['source_delta_e76']:.3f}" for name,m in case['metrics'].items()),flush=True)
-                report=dict(baseline_commit='6b657ba2cc783edc22cd084126347b52fd274e7c',size=args.size,seeds=args.seeds,
+                report=dict(baseline_commit='6b657ba2cc783edc22cd084126347b52fd274e7c',size=args.size,seeds=args.seeds,eye_detail=args.eye_detail,
                             opencv=cv2.__version__,python=platform.python_version(),annotations=annotations,cases=cases)
                 write_report(args.output,report)
 

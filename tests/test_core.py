@@ -79,7 +79,7 @@ def test_processing_contract_and_all_exports(client, params, k, factor):
 @pytest.mark.parametrize('field,value', [('k', 2), ('k', 33), ('k', 'abc'), ('k', 3.5),
     ('resolution_factor', 0), ('resolution_factor', 'nan'), ('font_scale', 'inf'),
     ('bilateral_diameter', 16), ('sigma_color', 0), ('area_min', 0), ('stroke_width', 5),
-    ('color_space', 'unknown'), ('protect_eyes', 'perhaps'), ('canvas_width_cm', 'inf'),
+    ('color_space', 'unknown'), ('protect_eyes', 'perhaps'), ('eye_detail','unknown'), ('canvas_width_cm', 'inf'),
     ('canvas_width_cm', -1), ('canvas_width_cm', 201), ('canvas_width_cm', 4.9), ('request_id', 'invalid'), ('unknown', 'value')])
 def test_invalid_parameters_do_not_create_jobs(client, params, field, value):
     params[field] = value
@@ -296,6 +296,7 @@ def test_retention_uses_completion_order_when_clock_ticks_tie(tmp_path, params, 
 def test_omitted_color_options_use_perceptual_and_eye_defaults(client, params):
     params.pop('color_space')
     params.pop('protect_eyes')
+    params.pop('eye_detail')
     response = submit(client, params)
     assert response.status_code == 202
     job_id = response.json()['job_id']
@@ -304,6 +305,7 @@ def test_omitted_color_options_use_perceptual_and_eye_defaults(client, params):
     assert state['status'] == 'Complete', state
     assert state['result']['parameters']['color_space'] == 'lab'
     assert state['result']['parameters']['protect_eyes'] is True
+    assert state['result']['parameters']['eye_detail'] == 'fine'
 
 
 @pytest.mark.parametrize('field,value', [('sizing_mode','auto'),('paper_size','legal')])

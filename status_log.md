@@ -1,5 +1,12 @@
 # Status Log - Paint-by-Numbers App
 
+## 2026-10-27: Version 1.4.1 paintability follow-up
+[DONE] Clarified automatic Physical sizing with Auto badges, an accessible Pixels shortcut and a unit-safe 40 cm canvas button. Added honest numbered-area coverage and protected-eye/elsewhere missing-region diagnostics.
+[DONE] Added opt-in Balanced eye smoothing before quantization, cache isolation, project regeneration/draft undo/redo and saved-profile restoration. Existing v1 bundles default to Fine without changing stored arrays. Fine and existing preset cutoffs remain defaults; explicit stronger cleanup sets 200 pixels and warns about unprotected details.
+[DONE] Final full suite: 193 passed in 112.12 s, including 22 browser workflows. Eight additional private still-image browser workflows at 40 cm passed, including manual eyes/profile regeneration, undo, save and all five exports. Runtime-only 1.4.1 upload/edit/undo/redo/export/save/reopen/shutdown passed. Ruff, JavaScript, whitespace and locked advisory audit passed.
+[DONE] Completed 64 private matched image/preset/profile/cutoff comparisons at full resolution plus 64 at max768/seed42. Ran six synthetic, 18 photo, 36 facial plus six second-size/seed and 80 physical pairs. Protected IDs stayed unchanged. Reviewed local eye crops, desktop/mobile and portrait/landscape tiled outputs. Balanced reduces some speckles but can worsen edge/area metrics; stronger cleanup increases color distortion. No broad face-quality claim or private images published. See benchmarks/RELEASE_1_4_1_RESULTS.md.
+Publication: commit, main push and five exact-SHA CI jobs are reported after completion.
+
 ## 2026-10-26: Version 1.4 manual finishing and portable projects
 [DONE] Milestone 1: introduced independent, bounded project ownership, revision-specific binary assets, reusable rendering and connected-region identity separate from palette indices.
 [DONE] Milestone 2: added normalized manual eye rectangles, detected-box overrides, upstream protection regeneration and complete undo checkpoints. Existing automatic-only cache provenance and protected-pixel behavior remain enforced.

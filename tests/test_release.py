@@ -144,12 +144,14 @@ def test_cropped_eye_filter_matches_full_frame():
 
 def test_style_changes_reuse_owned_color_analysis(tmp_path, params):
     from tests.conftest import wait_for
+    params.pop('eye_detail')  # Direct callers and already-running 1.4 parents remain compatible.
     manager = JobManager(root=tmp_path)
     try:
         data = sample_image()
         first = manager.start(data, params)
         result = wait_for(lambda: manager.snapshot(first), lambda s: s['status'] in {'Complete', 'Error'})
         assert result['status'] == 'Complete', result
+        assert result['result']['parameters']['eye_detail'] == 'fine'
         updated = dict(params, stroke_width=1, canvas_width_cm=40)
         second = manager.start(data, updated)
         result = wait_for(lambda: manager.snapshot(second), lambda s: s['status'] in {'Complete', 'Error'})
@@ -162,6 +164,21 @@ def test_style_changes_reuse_owned_color_analysis(tmp_path, params):
             manager.ttl = 0
             manager.reap()
             assert (manager.jobs[second].directory / 'clusters.npz').exists()
+    finally:
+        manager.close()
+
+
+def test_eye_detail_invalidates_cache_but_style_changes_reuse_it(tmp_path,params):
+    from tests.conftest import wait_for
+    manager = JobManager(root=tmp_path)
+    try:
+        data = sample_image()
+        configurations = [dict(params,eye_detail='fine'),dict(params,eye_detail='balanced'),dict(params,eye_detail='balanced',stroke_width=1)]
+        for options,reused in zip(configurations,[False,False,True],strict=True):
+            job = manager.start(data,options)
+            state = wait_for(lambda:manager.snapshot(job),lambda s:s['status'] in {'Complete','Error'})
+            assert state['status'] == 'Complete',state
+            assert state['result']['diagnostics']['reused_color_analysis'] is reused
     finally:
         manager.close()
 

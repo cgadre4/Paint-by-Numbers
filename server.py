@@ -186,6 +186,7 @@ async def start_processing(
     paper_size: Literal["a4", "letter"] = Form("a4"),
     request_id: UUID | None = Form(None),
     manual_protection: str = Form('[]'),
+    eye_detail: Literal['fine','balanced'] = Form('fine'),
 ):
     params = dict(k=k, resolution_factor=resolution_factor, bilateral_diameter=bilateral_diameter,
                   sigma_color=sigma_color, area_min=area_min, stroke_width=stroke_width, font_scale=font_scale)
@@ -194,10 +195,10 @@ async def start_processing(
     if not math.isfinite(canvas_width_cm) or 0 < canvas_width_cm < 5:
         raise HTTPException(422, "Canvas width must be 0 (fit selected paper) or 5-200 cm.")
     form = await request.form()
-    allowed = set(params) | {"file", "color_space", "protect_eyes", "canvas_width_cm", "request_id", "sizing_mode", "paper_size", "manual_protection"}
+    allowed = set(params) | {"file", "color_space", "protect_eyes", "canvas_width_cm", "request_id", "sizing_mode", "paper_size", "manual_protection", "eye_detail"}
     if set(form) - allowed:
         raise HTTPException(422, "Unknown processing option.")
-    params.update(color_space=color_space, protect_eyes=(protect_eyes == "true"), canvas_width_cm=canvas_width_cm, sizing_mode=sizing_mode, paper_size=paper_size)
+    params.update(color_space=color_space, protect_eyes=(protect_eyes == "true"), canvas_width_cm=canvas_width_cm, sizing_mode=sizing_mode, paper_size=paper_size, eye_detail=eye_detail)
     try:
         manual = rectangles(json.loads(manual_protection))
     except (ValueError, TypeError) as exc:

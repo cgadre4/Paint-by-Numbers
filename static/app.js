@@ -34,8 +34,17 @@
         el.paperSize.value = state.parameters.paper_size; el.sizingMode.value = state.parameters.sizing_mode;
         el.paperSize.disabled = el.sizingMode.disabled = el.canvasUnit.disabled = Boolean(state.active);
         for (const key of ['stroke_width', 'font_scale']) el[controls[key][0]].disabled = Boolean(state.active) || state.parameters.sizing_mode === 'physical';
+        const physical = state.parameters.sizing_mode === 'physical';
+        if (physical) { el.strokeBadge.textContent = 'Auto'; el.fontBadge.textContent = 'Auto'; }
+        el.sizingHelp.textContent = physical
+            ? 'Outline thickness and font controls are automatic in Physical mode: number ink stays at least 2 mm tall at the chosen canvas size. Switch to Pixels to adjust them manually.'
+            : 'Pixel controls are enabled below. Printed number size depends on canvas width; review size warnings before printing.';
+        el.toggleSizingBtn.textContent = physical ? 'Use manual pixel controls' : 'Use automatic physical sizing';
+        el.toggleSizingBtn.disabled = el.canvas40Btn.disabled = Boolean(state.active || state.editorBusy);
         el.canvasWidth.disabled = el.preset.disabled = Boolean(state.active);
         el.colorSpace.value = state.parameters.color_space;
+        el.eyeDetail.value = state.parameters.eye_detail || 'fine';
+        el.eyeDetail.disabled = el.strongerCleanupBtn.disabled = Boolean(state.active || state.editorBusy);
         el.protectEyes.checked = state.parameters.protect_eyes;
         el.colorSpace.disabled = el.protectEyes.disabled = Boolean(state.active);
         el.processBtn.disabled = Boolean(state.active) || !state.source;
@@ -65,6 +74,7 @@
         el.resultsContainer.classList.add('hidden');
         el.printTemplate.removeAttribute('src');
         el.canvasInfo.textContent = '';
+        el.coverageSummary.textContent = ''; el.coverageSummary.classList.add('hidden');
         state.missing = null;
         document.body.classList.remove('print-ready');
         el.printReadyBtn.textContent = 'Print Ready View';
@@ -219,6 +229,10 @@
         for (let i = 0; i < state.missing.length; i++) state.missing[i] = missingRGBA[i * 4];
         labelCanvas.width = labelCanvas.height = 1;
         state.result = result; state.template = template;
+        const missingInfo = result.missing_regions;
+        const split = Number.isInteger(missingInfo.protected_count) ? ` (${missingInfo.protected_count} touching protected eyes, ${missingInfo.unprotected_count} elsewhere)` : '';
+        el.coverageSummary.textContent = `${(100 - missingInfo.area_percent).toFixed(1)}% of image area is in numbered regions. ${missingInfo.count} unnumbered regions${split}.`;
+        el.coverageSummary.classList.remove('hidden');
         el.canvasInfo.textContent = result.canvas ? `Canvas: ${(result.canvas.width_mm / 10).toFixed(1)} × ${(result.canvas.height_mm / 10).toFixed(1)} cm; ${result.canvas.effective_dpi} ppi. ${result.canvas.custom ? 'Custom PDF: print at 100%, without Fit to page.' : `PDF fits ${result.parameters.paper_size.toUpperCase()} with 10 mm margins.`}` : '';
         draw(el.quantizedCanvas, preview); draw(el.templateCanvas, template);
         transform();
@@ -395,7 +409,7 @@
             updateControls();
         });
     }
-    for (const [name, id] of [['color_space', 'colorSpace'], ['protect_eyes', 'protectEyes']]) {
+    for (const [name, id] of [['color_space', 'colorSpace'], ['protect_eyes', 'protectEyes'], ['eye_detail','eyeDetail']]) {
         el[id].addEventListener('change', () => {
             if (state.active) return;
             state.parameters[name] = name === 'protect_eyes' ? el[id].checked : el[id].value;
@@ -404,6 +418,20 @@
         });
     }
     el.canvasUnit.addEventListener('change', updateControls);
+    el.strongerCleanupBtn.addEventListener('click', () => {
+        el.areaMin.value = '200'; el.areaMin.dispatchEvent(new Event('input'));
+        el.advancedSettings.open = true;
+        message('Small-region cutoff set to 200 pixels. This can remove unprotected fine details; protected eye colors remain fixed during cleanup. Process to compare.');
+    });
+    el.toggleSizingBtn.addEventListener('click', () => {
+        el.sizingMode.value = state.parameters.sizing_mode === 'physical' ? 'pixels' : 'physical';
+        el.sizingMode.dispatchEvent(new Event('change'));
+        if (state.parameters.sizing_mode === 'pixels') el.advancedSettings.open = true;
+    });
+    el.canvas40Btn.addEventListener('click', () => {
+        el.canvasWidth.value = String(40 / (el.canvasUnit.value === 'in' ? 2.54 : 1));
+        el.canvasWidth.dispatchEvent(new Event('change'));
+    });
     for (const [id, key] of [['paperSize', 'paper_size'], ['sizingMode', 'sizing_mode']]) el[id].addEventListener('change', () => {
         state.parameters[key] = el[id].value; invalidate(); clearResults(); updateControls();
         message('Painting dimensions changed. Process again to update numbers and exports.');

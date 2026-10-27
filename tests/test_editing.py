@@ -163,6 +163,15 @@ def mutate_bundle(data, change, extra=None):
     return output.getvalue()
 
 
+def test_legacy_v1_project_loads_fine_eye_detail_without_changing_pixels():
+    old = document()
+    old["states"][0]["params"].pop("eye_detail")
+    restored = unpack_document(pack_document(old))
+    assert restored["states"][0]["params"]["eye_detail"] == "fine"
+    for key in ("source", "labels", "raw", "centers"):
+        assert np.array_equal(old["states"][0][key], restored["states"][0][key])
+
+
 @pytest.mark.parametrize(
     "change",
     [

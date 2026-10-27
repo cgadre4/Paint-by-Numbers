@@ -61,7 +61,7 @@ class JobManager:
         self.cancelled = {}
 
     def start(self, image, params, request_id=None):
-        upstream = {name: params.get(name) for name in ("k", "resolution_factor", "bilateral_diameter", "sigma_color", "color_space", "protect_eyes", "manual_protection")}
+        upstream = {name: params.get(name) for name in ("k", "resolution_factor", "bilateral_diameter", "sigma_color", "color_space", "protect_eyes", "manual_protection", "eye_detail")}
         cluster_key = hashlib.sha256(image + json.dumps(upstream, sort_keys=True).encode()).hexdigest()
         with self.lock:
             self.reap()

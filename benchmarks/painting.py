@@ -23,6 +23,7 @@ def main():
     parser.add_argument('--widths',type=float,nargs='+',default=[20,40])
     parser.add_argument('--download',action='store_true')
     parser.add_argument('--output',type=Path,default=Path('.local/painting-benchmark'))
+    parser.add_argument('--eye-detail',choices=['fine','balanced'],default='fine')
     args=parser.parse_args()
     if not 32<=args.size<=2000 or not 0<=args.seed<2**31 or any(not 5<=w<=100 for w in args.widths):
         parser.error('Use size 32-2000 and a nonnegative 31-bit seed.')
@@ -40,8 +41,9 @@ def main():
         protected=eye_mask(source.shape,boxes)
         annotation=annotations.get(item['id'])
         eyes,face,face_box=annotation_masks(source.shape,annotation)
-        for preset,params in PRESETS.items():
-            filtered=preserve_eye_pixels(source,bilateral_filter(source,params['bilateral_diameter'],params['sigma_color'],params['sigma_color']),protected)
+        for preset,base_params in PRESETS.items():
+            params=dict(base_params,eye_detail=args.eye_detail)
+            filtered=preserve_eye_pixels(source,bilateral_filter(source,params['bilateral_diameter'],params['sigma_color'],params['sigma_color']),protected,detail=args.eye_detail)
             raw,centers=quantize_image(filtered,params['k'],args.seed,'lab')
             for width in args.widths:
                 methods={}
@@ -72,7 +74,7 @@ def main():
                 comparison(args.output/(ident+'.png'),source,outputs,face_box)
                 cases.append(dict(id=item['id'],category=item['category'],preset=preset,width_cm=width,detected_faces=faces,eye_boxes=boxes,metrics=methods))
                 print(ident,methods['pixels']['unnumbered_regions'],'->',methods['physical']['unnumbered_regions'],flush=True)
-        report=dict(baseline='1.2 pixel-mode geometry (04cf37a); identical Lab quantization per pair',size=args.size,seed=args.seed,cases=cases)
+        report=dict(baseline='1.2 pixel-mode geometry (04cf37a); identical Lab quantization per pair',size=args.size,seed=args.seed,eye_detail=args.eye_detail,cases=cases)
         (args.output/'report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
 
 

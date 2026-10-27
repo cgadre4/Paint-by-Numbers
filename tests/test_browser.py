@@ -348,3 +348,32 @@ def test_physical_units_paper_tiles_and_mode_invalidation(page):
     assert page.locator('#downloadTilesPDF').get_attribute('href') is None
     page.locator('#canvasUnit').select_option('cm')
     expect(page.locator('#canvasWidth')).to_have_value('40.64')
+
+
+def test_sizing_explanation_eye_detail_cleanup_and_coverage(page):
+    upload(page)
+    expect(page.locator('#sizingHelp')).to_contain_text('at least 2 mm')
+    expect(page.locator('#strokeBadge')).to_have_text('Auto')
+    page.locator('#toggleSizingBtn').click()
+    expect(page.locator('#strokeWidth')).to_be_enabled()
+    expect(page.locator('#fontScale')).to_be_enabled()
+    expect(page.locator('#sizingMode')).to_have_value('pixels')
+    page.locator('#toggleSizingBtn').click()
+    expect(page.locator('#strokeWidth')).to_be_disabled()
+    page.locator('#canvasUnit').select_option('in')
+    page.locator('#canvas40Btn').click()
+    page.locator('#eyeDetail').select_option('balanced')
+    page.locator('#strongerCleanupBtn').click()
+    expect(page.locator('#areaMin')).to_have_value('200')
+    complete(page)
+    job = page.locator('#downloadTemplatePNG').get_attribute('href').split('/')[-2]
+    result = page.request.get(f'/api/process/status/{job}').json()['result']
+    assert result['parameters']['canvas_width_cm'] == 40
+    assert result['parameters']['eye_detail'] == 'balanced'
+    assert result['parameters']['area_min'] == 200
+    assert result['missing_regions']['protected_count'] + result['missing_regions']['unprotected_count'] == result['missing_regions']['count']
+    expect(page.locator('#coverageSummary')).to_contain_text('image area')
+    expect(page.locator('#coverageSummary')).to_contain_text('touching protected eyes')
+    page.locator('#resetBtn').click()
+    expect(page.locator('#eyeDetail')).to_have_value('fine')
+    expect(page.locator('#coverageSummary')).to_be_hidden()

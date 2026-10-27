@@ -82,7 +82,13 @@ def change_document(document, command):
         "number": {"type", "region", "x", "y"},
         "regenerate": {"type", "manual", "disabled"},
     }
-    if not isinstance(kind, str) or kind not in fields or set(command) != fields[kind]:
+    required = fields.get(kind) if isinstance(kind, str) else None
+    allowed = (
+        required | ({"eye_detail"} if kind == "regenerate" else set())
+        if required
+        else set()
+    )
+    if required is None or not required <= set(command) or set(command) - allowed:
         raise ValueError("Unknown command or unexpected command fields.")
     document = dict(document, states=list(document["states"]))
     cursor = document["cursor"]
@@ -106,14 +112,23 @@ def change_document(document, command):
             integer(index, "Detected eye", 0, len(state["detected"]) - 1)
         if len(set(disabled)) != len(disabled):
             raise ValueError("Duplicate detected eye.")
-        state = dict(state, manual=manual, disabled=disabled, overrides=[])
+        detail = command.get("eye_detail", state["params"].get("eye_detail", "fine"))
+        if not isinstance(detail, str) or detail not in {"fine", "balanced"}:
+            raise ValueError("Eye detail must be fine or balanced.")
+        state = dict(
+            state,
+            manual=manual,
+            disabled=disabled,
+            overrides=[],
+            params=dict(state["params"], eye_detail=detail),
+        )
         mask = protection_mask(state)
         p = state["params"]
         source = state["source"]
         smoothed = bilateral_filter(
             source, p["bilateral_diameter"], p["sigma_color"], p["sigma_color"]
         )
-        smoothed = preserve_eye_pixels(source, smoothed, mask)
+        smoothed = preserve_eye_pixels(source, smoothed, mask, detail=detail)
         raw, centers = quantize_image(smoothed, p["k"], color_space=p["color_space"])
         labels = cleanup_regions(
             raw,
@@ -214,6 +229,7 @@ def process_project_job(job_id, shared_state, directory, params):
             manual=state["manual"],
             detected=state["detected"],
             disabled=state["disabled"],
+            eye_detail=state["params"].get("eye_detail", "fine"),
             has_original=bool(document.get("original")),
             cursor=document["cursor"],
             history=[s["title"] for s in document["states"]],

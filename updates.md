@@ -166,3 +166,12 @@ Added cancellable worker ownership for archive validation and edits, request ide
 Observed validation: 182 full-suite tests passed, including 20 browser workflows, plus seven additional real-photo editor/export checks. Ruff, both JavaScript syntax checks, Git whitespace and locked advisory scan passed. A fresh runtime-only 1.4 environment completed processing, manual protection, merge, undo/redo, all five exports, optional original inclusion, save/reopen and graceful shutdown. Actual portrait/landscape tiled PDFs, adjacent pages, rulers/alignment marks, all 32 palette colors, eye crops and desktop/mobile UI were reviewed. The direct renderer's historical placement shape remains compatible after a regression exposed the need to make extra geometry metadata opt-in.
 
 All six synthetic, 18 photo, 36 facial, six second-size/seed facial and 120 paired physical quality-metric dictionaries matched the final 1.3 reports. Six K16 one/two-worker resource probes completed up to four million processing pixels; these are diagnostic samples, not p95 or memory ceilings. See benchmarks/RELEASE_1_4_RESULTS.md. Main publication and all five exact-commit CI results are reported after GitHub finishes.
+
+
+## 2026-10-27 - Release 1.4.1 paintability follow-up
+
+Clarified why physical font/outline controls are automatic and added manual Pixels and 40 cm shortcuts. Added numbered-area coverage with missing-region counts split by whether a component touches protected eyes. Totals, overlays, full number containment and physical minimums remain enforced.
+
+Added optional Balanced eye preprocessing, profile-aware color caching, project regeneration/profile history and backward-compatible v1 reopen as Fine. Stronger small-region cleanup explicitly selects the existing 200-pixel cutoff. Defaults remain Fine and the prior Simple/Detailed cutoffs: eye smoothing and cleanup have real fidelity tradeoffs.
+
+Observed validation: 193 full-suite tests (22 browser workflows), eight additional private still-image workflows at 40 cm, runtime-only editing/export/save/reopen smoke, lint/JavaScript/whitespace and locked dependency audit passed. Full and second-size/seed local paired comparisons, historical synthetic/photo/facial and physical benchmarks completed with zero protected ID changes. Private media, filenames and projects stay ignored/local. Measurements, limitations and reproduction commands are in benchmarks/RELEASE_1_4_1_RESULTS.md; remote CI is checked separately for the pushed main SHA.

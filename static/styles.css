@@ -27,6 +27,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); min-height: 24px; 
 input[type=checkbox] { min-width: 18px; min-height: 18px; vertical-align: middle; accent-color: var(--accent); }
 input[type=number],select { width: 100%; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid #8b949e; border-radius: 6px; }
 .control-help,.hw-accel-status,.empty-text { color: var(--muted); font-size: 12px; margin: 8px 0; }
+.sizing-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.sizing-actions button { flex: 1 1 130px; font-size: 12px; }
 .badge { color: var(--accent); font-variant-numeric: tabular-nums; }
 summary { cursor: pointer; padding: 8px 0; font-weight: 600; }
 details[open] summary { margin-bottom: 12px; }
@@ -57,6 +59,7 @@ button:hover,.btn-secondary:hover { border-color: var(--accent); }
 .loading svg { width: 24px; height: 24px; }
 .view-options { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .view-options select { width: auto; }
+.review-summary { color: var(--muted); padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--panel); margin: 0; font-size: 12px; }
 .canvas-container { display: flex; flex: 1; gap: 12px; min-height: 0; }
 .canvas-viewer { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .canvas-wrapper { width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 42px 10px 10px; }

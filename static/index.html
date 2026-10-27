@@ -65,8 +65,17 @@
                     <select id="paperSize"><option value="a4">A4</option><option value="letter">US Letter</option></select>
                     <label for="sizingMode">Number and outline sizing</label>
                     <select id="sizingMode"><option value="physical">Physical: readable at canvas size</option><option value="pixels">Pixels: advanced manual controls</option></select>
+                    <p id="sizingHelp" class="control-help"></p>
+                    <div class="sizing-actions"><button id="toggleSizingBtn" type="button">Use manual pixel controls</button><button id="canvas40Btn" type="button">Use 40 cm canvas</button></div>
                     <p id="canvasHelp" class="control-help">Height follows the image proportions. Physical mode targets numbers at least 2 mm tall and 0.3 mm outlines; fine details may remain unnumbered. The noise-removal cutoff stays in pixels. Print PDFs at 100%. PNG keeps its pixel dimensions.</p>
                     <p id="canvasInfo" class="control-help"></p>
+                </div>
+                <div class="control-group">
+                    <label for="eyeDetail">Eye detail</label>
+                    <select id="eyeDetail" aria-describedby="eyeDetailHelp"><option value="fine">Fine - retain texture</option><option value="balanced">Balanced - smooth eye speckles</option></select>
+                    <p id="eyeDetailHelp" class="control-help">Balanced applies stronger edge-preserving smoothing before clustering in protected eye areas. It may soften subtle detail; compare the color reference. Fine keeps the previous behavior. Manually mark any eyes missed by detection before stronger cleanup.</p>
+                    <button id="strongerCleanupBtn" type="button">Stronger small-region cleanup</button>
+                    <p class="control-help">Sets the cutoff to 200 processing pixels, removing more small unprotected details. Protected eye palette IDs remain unchanged by cleanup. Process again to apply.</p>
                 </div>
                 <details id="advancedSettings"><summary>Advanced settings</summary>
 
@@ -110,12 +119,12 @@
 
                 <div class="control-group">
                     <label for="strokeWidth">Outline Stroke Thickness: <span class="badge" id="strokeBadge">2</span></label>
-                    <input type="range" id="strokeWidth" min="1" max="4" value="2" step="1">
+                    <input type="range" id="strokeWidth" min="1" max="4" value="2" step="1" aria-describedby="sizingHelp">
                 </div>
 
                 <div class="control-group">
                     <label for="fontScale">Number Font Scale: <span class="badge" id="fontBadge">1.0</span></label>
-                    <input type="range" id="fontScale" min="0.5" max="2.0" value="1.0" step="0.1">
+                    <input type="range" id="fontScale" min="0.5" max="2.0" value="1.0" step="0.1" aria-describedby="sizingHelp">
                 </div>
                 </details>
             </section>
@@ -190,6 +199,7 @@
                 <button id="applyEyeBoxBtn" type="button">Add rectangle</button><button id="deleteEyeBoxBtn" type="button" disabled>Remove rectangle</button><button id="regenerateProtectionBtn" type="button" class="btn-primary hidden">Regenerate with protection</button></div>
                 <p id="protectionNotice" role="status" class="control-help">Rectangles will be applied when you process the image.</p>
                 <div id="detectedProtectionList" class="detected-protection"></div>
+                <div id="projectEyeDetailGroup" class="hidden"><label for="projectEyeDetail">Eye detail for regeneration</label><select id="projectEyeDetail"><option value="fine">Fine - retain texture</option><option value="balanced">Balanced - smooth eye speckles</option></select><p class="control-help">Regeneration can change the palette and replaces finishing edits. Undo restores the previous design.</p></div>
             </section>
 
             <div class="view-options">
@@ -197,6 +207,7 @@
                 <label for="showEyes"><input id="showEyes" type="checkbox"> Protected eyes</label>
                 <label for="showMissing"><input id="showMissing" type="checkbox"> Unnumbered regions</label>
             </div>
+            <p id="coverageSummary" class="review-summary hidden" role="status"></p>
             <div class="canvas-container" data-view="all">
                 <!-- Canvas 1: Source Image -->
                 <section class="canvas-viewer source-viewer">

@@ -4,13 +4,14 @@ window.createPaintingEditor = function (hooks) {
     const {state, el, message, request, loadImage, draw} = hooks;
     let project = null, projectRevision = 0, metadata = null, savedFingerprint = null;
     let tool = 'pan', manual = [], disabled = [], draftHistory = [], draftCursor = 0;
+    let eyeDetail = 'fine';
     let epoch = 0, selectionEpoch = 0, selection = null, selectionImage = null;
     let offset = 0, totalRegions = 0, busy = false, uncertain = false, sourceBase = null;
     let gesture = null, candidate = null;
     let selecting = false, queuedSelection = null;
     const copy = value => JSON.parse(JSON.stringify(value));
-    const draftKey = () => JSON.stringify({manual, disabled});
-    const committedKey = () => JSON.stringify({manual: metadata?.manual || [], disabled: metadata?.disabled || []});
+    const draftKey = () => JSON.stringify({manual, disabled, eye_detail: eyeDetail});
+    const committedKey = () => JSON.stringify({manual: metadata?.manual || [], disabled: metadata?.disabled || [], eye_detail: metadata?.eye_detail || 'fine'});
     const dirty = () => Boolean(project && (metadata?.fingerprint !== savedFingerprint || draftKey() !== committedKey()));
     const buttons = ['panTool', 'protectTool', 'selectTool', 'numberTool'];
     const toolNames = ['pan', 'protect', 'select', 'number'];
@@ -27,6 +28,9 @@ window.createPaintingEditor = function (hooks) {
         el.editorPanel.classList.toggle('hidden', !hasProject);
         el.protectionPanel.classList.toggle('hidden', tool !== 'protect');
         el.regenerateProtectionBtn.classList.toggle('hidden', !hasProject);
+        el.projectEyeDetailGroup.classList.toggle('hidden', !hasProject);
+        el.projectEyeDetail.value = eyeDetail;
+        el.projectEyeDetail.disabled = busy || uncertain;
         el.cancelEditBtn.classList.toggle('hidden', !busy);
         el.refreshProjectBtn.classList.toggle('hidden', !uncertain);
         el.openProjectBtn.disabled = !state.configured || busy || Boolean(state.active);
@@ -75,10 +79,11 @@ window.createPaintingEditor = function (hooks) {
         if (value !== 'pan') document.body.classList.remove('print-ready');
         redrawSource(); updateControls();
     }
-    function recordDraft(nextManual, nextDisabled) {
-        const before = {manual: copy(manual), disabled: copy(disabled)};
+    function recordDraft(nextManual, nextDisabled, nextDetail = eyeDetail) {
+        const before = {manual: copy(manual), disabled: copy(disabled), eye_detail: eyeDetail};
         manual = copy(nextManual); disabled = copy(nextDisabled);
-        const after = {manual: copy(manual), disabled: copy(disabled)};
+        eyeDetail = nextDetail;
+        const after = {manual: copy(manual), disabled: copy(disabled), eye_detail: eyeDetail};
         if (JSON.stringify(before) === JSON.stringify(after)) return;
         draftHistory = draftHistory.slice(0, draftCursor);
         draftHistory.push({before, after});
@@ -227,6 +232,7 @@ window.createPaintingEditor = function (hooks) {
         if (owner !== epoch) return false;
         state.revision += 1;
         projectRevision = snapshot.revision; metadata = result.editor;
+        eyeDetail = metadata.eye_detail || 'fine';
         manual = copy(metadata.manual); disabled = copy(metadata.disabled);
         draftHistory = []; draftCursor = 0;
         resetSelection();
@@ -337,6 +343,7 @@ window.createPaintingEditor = function (hooks) {
         epoch += 1; selectionEpoch += 1;
         project = metadata = candidate = savedFingerprint = null;
         projectRevision = 0; manual = []; disabled = []; draftHistory = []; draftCursor = 0;
+        eyeDetail = 'fine';
         busy = uncertain = false; tool = 'pan';
         resetSelection();
         if (sourceBase) sourceBase.width = sourceBase.height = 1;
@@ -351,6 +358,7 @@ window.createPaintingEditor = function (hooks) {
         if (kind === 'undo' && draftCursor > 0 || kind === 'redo' && draftCursor < draftHistory.length) {
             const entry = kind === 'undo' ? draftHistory[--draftCursor].before : draftHistory[draftCursor++].after;
             manual = copy(entry.manual); disabled = copy(entry.disabled);
+            eyeDetail = entry.eye_detail;
             refreshProtection(); redrawSource(); updateControls();
         } else if (project) await command({type: kind});
     }
@@ -437,8 +445,9 @@ window.createPaintingEditor = function (hooks) {
     });
     el.regenerateProtectionBtn.addEventListener('click', () => {
         if (metadata.cursor > 0 && !window.confirm('Regenerate with these eye areas? This replaces finishing edits and may change the palette. Undo can restore the previous design.')) return;
-        void command({type: 'regenerate', manual: copy(manual), disabled: copy(disabled)});
+        void command({type: 'regenerate', manual: copy(manual), disabled: copy(disabled), eye_detail: eyeDetail});
     });
+    el.projectEyeDetail.addEventListener('change', () => { recordDraft(manual, disabled, el.projectEyeDetail.value); });
     el.regionList.addEventListener('change', () => { if (el.regionList.value !== '') void selectRegion(`region=${el.regionList.value}`); });
     el.previousRegions.addEventListener('click', () => { offset = Math.max(0, offset - 100); void regionList(); });
     el.nextRegions.addEventListener('click', () => { offset += 100; void regionList(); });

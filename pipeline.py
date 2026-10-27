@@ -125,7 +125,7 @@ def quantize_image(image, k, seed=None, color_space="rgb"):
     return flat_labels.reshape(image.shape[:2]), centers
 
 
-def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=None, missing_mask=None, *, minimum_font_scale=None, overrides=None, include_geometry=False):
+def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=None, missing_mask=None, *, minimum_font_scale=None, overrides=None, include_geometry=False, missing_details=None):
     """Keep every boundary and only draw numbers whose complete box fits inside."""
     height, width = labels.shape
     template = np.full((height, width, 3), 255, np.uint8)
@@ -140,6 +140,7 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=
         thin = np.empty_like(boundary)
     placements = []
     unlabelled = 0
+    protected_missing = protected_area = unprotected_area = 0
     for color_idx in range(k):
         mask = (labels == color_idx).astype(np.uint8)
         contours, _ = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
@@ -203,8 +204,19 @@ def extract_contours_and_label(labels, k, stroke_width, font_scale, detail_mask=
                 if manual_center is not None:
                     raise ValueError('The manual number cannot fit at the minimum readable size.')
                 unlabelled += 1
+                if missing_details is not None:
+                    area = int(stats[component, cv2.CC_STAT_AREA])
+                    if detail_mask is not None and np.any(detail_mask[y:y+h,x:x+w] & region.astype(bool)):
+                        protected_missing += 1
+                        protected_area += area
+                    else:
+                        unprotected_area += area
                 if missing_mask is not None:
                     missing_mask[y:y+h, x:x+w][region.astype(bool)] = 255
+    if missing_details is not None:
+        missing_details.update(protected_count=protected_missing,unprotected_count=unlabelled-protected_missing,
+                               protected_area_percent=round(100*protected_area/labels.size,3),
+                               unprotected_area_percent=round(100*unprotected_area/labels.size,3))
     return template, placements, unlabelled
 
 
@@ -216,14 +228,15 @@ def render_result(labels, centers, params, protection, boxes, face_count, *, reu
     palette = [{"id": i + 1, "hex": "#{:02x}{:02x}{:02x}".format(*map(int, color)),
                 "rgb": list(map(int, color))} for i, color in enumerate(centers[:, ::-1])]
     missing_mask = np.zeros(labels.shape, np.uint8)
+    missing_details = {}
     template, placements, missing = extract_contours_and_label(
         labels, params['k'], geometry['stroke_width'], geometry['font_scale'], protection, missing_mask,
-        minimum_font_scale=geometry['minimum_font_scale'], overrides=overrides, include_geometry=True)
+        minimum_font_scale=geometry['minimum_font_scale'], overrides=overrides, include_geometry=True, missing_details=missing_details)
     notices = []
     if missing:
-        notices.append(f'{missing} region(s) could not fit a readable number. Try fewer colors; review fine details against the color preview before painting.')
+        notices.append(f'{missing} unnumbered region(s): {missing_details["protected_count"]} touch protected eye areas and {missing_details["unprotected_count"]} are elsewhere. Try Simple style or fewer colors for a more paintable design; compare fine details with the color reference.')
     if params.get('protect_eyes', True) and not boxes:
-        notices.append('No human eyes were detected; eye protection was not applied. Review small, angled, or obscured faces.')
+        notices.append('No human eyes were detected; automatic eye protection was not applied. Mark missed eyes manually before stronger cleanup, especially on small, angled, or obscured faces.')
     elif boxes:
         notices.append(f'Protected {len(boxes)} eye area(s), using thin outlines and keeping numbers outside them. Fine eye regions may remain unnumbered.')
     physical = canvas_metadata(labels.shape[1], labels.shape[0], {**params, 'stroke_width': geometry['stroke_width']}, placements)
@@ -236,7 +249,7 @@ def render_result(labels, centers, params, protection, boxes, face_count, *, reu
             'eye_protection': {'enabled': params.get('protect_eyes', True), 'detected_faces': face_count, 'boxes': boxes},
             'warnings': notices, 'canvas': physical,
             'missing_regions': {'count': missing, 'area_percent': round(100 * np.count_nonzero(missing_mask) / missing_mask.size, 3),
-                                'mask': img_to_base64(missing_mask)},
+                                'mask': img_to_base64(missing_mask), **missing_details},
             'diagnostics': {'backend': 'CPU', 'threads': cv2.getNumThreads(), 'reused_color_analysis': reused,
                             'render_geometry': geometry, 'stages_seconds': timings or {}}, 'schema_version': 2}
 
@@ -245,6 +258,8 @@ def process_job_worker(job_id, shared_state, directory, params):
     if params.get('_project_task'):
         from projects import process_project_job
         return process_project_job(job_id, shared_state, directory, params)
+    params = dict(params)
+    params.setdefault('eye_detail','fine')
     root = Path(directory)
     timings = {}
     previous, stage = time.perf_counter(), None
@@ -287,7 +302,7 @@ def process_job_worker(job_id, shared_state, directory, params):
             protection = eye_mask(image.shape, boxes)
             progress("Applying bilateral filter", 20)
             smoothed = bilateral_filter(image, params["bilateral_diameter"], params["sigma_color"], params["sigma_color"])
-            smoothed = preserve_eye_pixels(image, smoothed, protection)
+            smoothed = preserve_eye_pixels(image, smoothed, protection, detail=params.get('eye_detail','fine'))
             space = params.get("color_space", "lab")
             progress("Clustering perceptual colors" if space == "lab" else "Clustering RGB colors", 40)
             raw_labels, centers = quantize_image(smoothed, params["k"], color_space=space)
